@@ -97,6 +97,15 @@ def main(verbose):
       check            Validate code references in generated docs (no API key needed)
       diff             Entity-level semantic diff between two git refs (no API key needed)
       validate-skills  Validate SKILL.md files against standard format (no API key needed)
+      blast-radius     Compute transitive blast radius of a change (no API key needed)
+      change-impact    Identify which tests need to run for a change (no API key needed)
+      co-change        Detect files that always change together (no API key needed)
+      ownership        Compute file/module ownership and bus factor (no API key needed)
+      analyze          Multi-layer code analysis: AST + Call Graph + CFG + DFG + PDG (no API key needed)
+      search           Semantic code search by behavior (no API key needed)
+      slice            Compute program slice for a specific line (no API key needed)
+      decisions        Decision registry from git history and inline markers (no API key needed)
+      registry         Cross-repo code graph registry (no API key needed)
 
     \b
     Examples:
@@ -758,7 +767,7 @@ def check(working_dir, docs_dir, fmt, fail_on, quiet):
     import sys
     from pathlib import Path
 
-    from .checker import ReferenceChecker, check_docs
+    from .checker import ReferenceChecker
 
     workspace = Path(working_dir).resolve()
 
@@ -945,9 +954,11 @@ def compress(workspace, target_dir, aggressive, dry_run, quiet):
     help="File path for --query imports.")
 @click.option("--communities", is_flag=True, default=False,
     help="Detect and display module communities (clusters of related modules).")
+@click.option("--incremental", is_flag=True, default=False,
+    help="Use incremental graph building with file-hash caching (faster on repeated runs).")
 @click.option("-q", "--quiet", is_flag=True, default=False,
     help="Suppress progress output.")
-def graph(workspace, output_path, fmt, graph_type, blast_radius, v2, depth, max_files, include_tests, query_mode, symbol, query_file, communities, quiet):
+def graph(workspace, output_path, fmt, graph_type, blast_radius, v2, depth, max_files, include_tests, query_mode, symbol, query_file, communities, incremental, quiet):
     """
     Build a code knowledge graph from scanner data (no API key needed).
 
@@ -1074,7 +1085,17 @@ def graph(workspace, output_path, fmt, graph_type, blast_radius, v2, depth, max_
             mode = "v2 (extractor-based)" if v2 else "v1 (name-matching)"
             print(f"Building code graph for {workspace} ({mode}) ...", file=sys.stderr)
 
-        if v2:
+        if incremental:
+            from .incremental_graph import build_graph_incremental
+            code_graph, stats = build_graph_incremental(workspace)
+            if not quiet:
+                if stats["cached"]:
+                    print(f"Graph loaded from cache in {stats['build_time_ms']:.0f}ms "
+                          f"({stats['total_files']} files, 0 changes)", file=sys.stderr)
+                else:
+                    print(f"Graph built in {stats['build_time_ms']:.0f}ms "
+                          f"({stats['total_files']} files)", file=sys.stderr)
+        elif v2:
             from .graph import build_graph_v2
             code_graph = build_graph_v2(workspace)
         else:
@@ -1574,7 +1595,7 @@ def audit(path, fail_on, fmt, quiet):
 )
 @click.option("--type", "diagram_type",
     default="all", show_default=True,
-    type=click.Choice(["dependency", "directory", "callflow", "erd", "k8s", "openapi", "all"], case_sensitive=False),
+    type=click.Choice(["dependency", "directory", "callflow", "erd", "k8s", "openapi", "svg", "all"], case_sensitive=False),
     help="Diagram type to generate.")
 @click.option("--max-nodes", default=40, show_default=True, type=int,
     help="Max nodes in dependency diagram.")
@@ -1672,6 +1693,14 @@ def diagram(workspace, output_path, diagram_type, max_nodes, max_depth, entry, i
             str(root), entry, files, max_depth=max_depth,
         )
         output = "```mermaid\n" + mermaid + "\n```"
+    elif diagram_type == "svg":
+        from .diagram_svg import DiagramStyle, generate_svg_diagram
+        svg_style = DiagramStyle()
+        output = generate_svg_diagram(
+            code_graph, svg_style,
+            max_nodes=max_nodes,
+            title=str(Path(workspace).resolve().name) + " — Architecture",
+        )
     elif diagram_type in ("erd", "k8s", "openapi"):
         if not input_path:
             click.echo(f"--input is required for --type {diagram_type}.", err=True)
@@ -2135,7 +2164,7 @@ def validate_skills(path, strict, max_lines, fmt, fail_on, quiet):
     )
 
     if target.is_file():
-        from .skill_validator import FileResult, ValidationResult
+        from .skill_validator import ValidationResult
         file_result = validator.validate_file(target)
         result = ValidationResult(
             files_scanned=1,
@@ -2405,6 +2434,891 @@ def query(query_text, top_k, index_dir, as_json, embedding_model, search_mode):
         for r in results:
             snippet = r.text[:80].replace("\n", " ")
             click.echo(f"{r.score:.4f} | {r.entity_type:8s} | {r.entity_id} | {snippet}")
+
+
+# ---------------------------------------------------------------------------
+# blast-radius subcommand (#14 + #15)
+# ---------------------------------------------------------------------------
+
+@main.command("blast-radius")
+@click.argument("target", required=False)
+@click.option("-w", "--working-dir", default=".", show_default=True,
+    help="Path to the repo to analyze.",
+    type=click.Path(exists=True, file_okay=False))
+@click.option("--files", multiple=True,
+    help="File paths to analyze (alternative to commit target).")
+@click.option("--depth", default=3, show_default=True, type=int,
+    help="Max BFS depth for transitive dependencies.")
+@click.option("--max-files", default=50, show_default=True, type=int,
+    help="Cap on total files in result.")
+@click.option("--include-tests/--no-include-tests", default=True, show_default=True,
+    help="Include test files in results.")
+@click.option("--ast", is_flag=True, default=False,
+    help="Enrich with tree-sitter AST symbols (requires intelligence extra).")
+@click.option("--json", "as_json", is_flag=True, default=False,
+    help="Output as JSON.")
+@click.option("-q", "--quiet", is_flag=True, default=False,
+    help="Suppress progress output.")
+def blast_radius_cmd(target, working_dir, files, depth, max_files, include_tests, ast, as_json, quiet):
+    """Compute blast radius of a change (no API key needed).
+
+    \b
+    Analyze which files are transitively affected by a change.
+    Accepts a git commit/ref OR a list of files.
+
+    \b
+    Examples:
+      repoforge blast-radius HEAD                    # from latest commit
+      repoforge blast-radius abc123                   # from specific commit
+      repoforge blast-radius --files src/auth.py --files src/models.py
+      repoforge blast-radius HEAD --ast               # with tree-sitter symbols
+      repoforge blast-radius --files cli.py --json    # JSON output
+    """
+    import json as json_mod
+    import sys
+
+    from .blast_radius import (
+        blast_radius_from_commit,
+        blast_radius_from_files,
+        format_blast_radius,
+    )
+
+    if not target and not files:
+        # Default: working tree changes
+        from .blast_radius import _get_changed_files_working_tree
+        wt_files = _get_changed_files_working_tree(working_dir)
+        if not wt_files:
+            click.echo("No changed files found in working tree. "
+                       "Specify a commit or --files.", err=True)
+            sys.exit(1)
+        files = tuple(wt_files)
+
+    if not quiet:
+        if target:
+            print(f"Computing blast radius for commit {target} in {working_dir} ...",
+                  file=sys.stderr)
+        else:
+            print(f"Computing blast radius for {len(files)} file(s) in {working_dir} ...",
+                  file=sys.stderr)
+
+    if target:
+        report = blast_radius_from_commit(
+            working_dir, target,
+            max_depth=depth, max_files=max_files,
+            include_tests=include_tests, with_ast=ast,
+        )
+    else:
+        report = blast_radius_from_files(
+            working_dir, list(files),
+            max_depth=depth, max_files=max_files,
+            include_tests=include_tests, with_ast=ast,
+        )
+
+    if as_json:
+        data = {
+            "changed_files": report.changed_files,
+            "affected_files": report.affected_files,
+            "affected_tests": report.affected_tests,
+            "risk_level": report.risk_level,
+            "depth": report.depth,
+            "exceeded_cap": report.exceeded_cap,
+            "total_affected": report.total_affected,
+        }
+        if report.symbols:
+            data["symbols"] = [
+                {"name": s.name, "kind": s.kind, "file": s.file,
+                 "line": s.line, "signature": s.signature}
+                for s in report.symbols
+            ]
+        click.echo(json_mod.dumps(data, indent=2))
+    else:
+        click.echo(format_blast_radius(report))
+
+
+# ---------------------------------------------------------------------------
+# change-impact subcommand (#16)
+# ---------------------------------------------------------------------------
+
+@main.command("change-impact")
+@click.argument("target", required=False)
+@click.option("-w", "--working-dir", default=".", show_default=True,
+    help="Path to the repo to analyze.",
+    type=click.Path(exists=True, file_okay=False))
+@click.option("--files", multiple=True,
+    help="File paths to analyze (alternative to commit target).")
+@click.option("--json", "as_json", is_flag=True, default=False,
+    help="Output as JSON.")
+@click.option("-q", "--quiet", is_flag=True, default=False,
+    help="Suppress progress output.")
+def change_impact_cmd(target, working_dir, files, as_json, quiet):
+    """Identify which tests need to run for a change (no API key needed).
+
+    \b
+    Given changed files (from a commit or file list), maps each changed
+    file to the test files that exercise it.
+
+    \b
+    Examples:
+      repoforge change-impact HEAD
+      repoforge change-impact abc123
+      repoforge change-impact --files src/auth.py --files src/models.py
+    """
+    import json as json_mod
+    import sys
+
+    from .change_impact import analyze_change_impact, format_change_impact
+
+    if not target and not files:
+        click.echo("Specify a commit SHA or --files.", err=True)
+        sys.exit(1)
+
+    if not quiet:
+        print(f"Analyzing change impact in {working_dir} ...", file=sys.stderr)
+
+    report = analyze_change_impact(
+        working_dir,
+        files=list(files) if files else None,
+        commit=target,
+    )
+
+    if as_json:
+        data = {
+            "changed_files": report.changed_files,
+            "tests_to_run": report.all_tests,
+            "untested_files": report.untested_files,
+            "mappings": [
+                {
+                    "source": m.source_file,
+                    "graph_tests": m.graph_tests,
+                    "convention_tests": m.convention_tests,
+                    "all_tests": m.all_tests,
+                }
+                for m in report.mappings
+            ],
+        }
+        click.echo(json_mod.dumps(data, indent=2))
+    else:
+        click.echo(format_change_impact(report))
+
+
+# ---------------------------------------------------------------------------
+# co-change subcommand (#17)
+# ---------------------------------------------------------------------------
+
+@main.command("co-change")
+@click.option("-w", "--working-dir", default=".", show_default=True,
+    help="Path to the repo to analyze.",
+    type=click.Path(exists=True, file_okay=False))
+@click.option("--threshold", default=0.5, show_default=True, type=float,
+    help="Minimum Jaccard similarity to include (0.0-1.0).")
+@click.option("--min-commits", default=3, show_default=True, type=int,
+    help="Minimum co-change count to include.")
+@click.option("--max-commits", default=500, show_default=True, type=int,
+    help="Maximum commits to analyze.")
+@click.option("--since", default=None,
+    help="Git date filter (e.g., '6 months ago').")
+@click.option("--no-imports", is_flag=True, default=False,
+    help="Skip cross-referencing with dependency graph.")
+@click.option("--json", "as_json", is_flag=True, default=False,
+    help="Output as JSON.")
+@click.option("-q", "--quiet", is_flag=True, default=False,
+    help="Suppress progress output.")
+def co_change_cmd(working_dir, threshold, min_commits, max_commits, since, no_imports, as_json, quiet):
+    """Detect files that always change together (no API key needed).
+
+    \b
+    Mines git history to find co-change pairs — files that frequently
+    appear in the same commits. Flags hidden coupling when pairs have
+    no import relationship.
+
+    \b
+    Examples:
+      repoforge co-change -w .
+      repoforge co-change -w . --threshold 0.7
+      repoforge co-change -w . --since "6 months ago"
+      repoforge co-change -w . --no-imports --json
+    """
+    import json as json_mod
+    import sys
+
+    from .co_change import detect_co_changes, format_co_changes
+
+    if not quiet:
+        print(f"Mining co-change patterns in {working_dir} ...", file=sys.stderr)
+
+    report = detect_co_changes(
+        working_dir,
+        threshold=threshold,
+        min_commits=min_commits,
+        max_commits=max_commits,
+        since=since,
+        check_imports=not no_imports,
+    )
+
+    if as_json:
+        data = {
+            "commits_analyzed": report.commits_analyzed,
+            "files_analyzed": report.files_analyzed,
+            "threshold": report.threshold,
+            "pairs": [
+                {
+                    "file_a": p.file_a,
+                    "file_b": p.file_b,
+                    "co_change_count": p.co_change_count,
+                    "jaccard": p.jaccard,
+                    "has_import_link": p.has_import_link,
+                    "confidence": p.confidence,
+                }
+                for p in report.pairs
+            ],
+        }
+        click.echo(json_mod.dumps(data, indent=2))
+    else:
+        click.echo(format_co_changes(report))
+
+
+# ---------------------------------------------------------------------------
+# ownership subcommand (#18)
+# ---------------------------------------------------------------------------
+
+@main.command("ownership")
+@click.option("-w", "--working-dir", default=".", show_default=True,
+    help="Path to the repo to analyze.",
+    type=click.Path(exists=True, file_okay=False))
+@click.option("--bus-factor", is_flag=True, default=False,
+    help="Show bus-factor risk analysis.")
+@click.option("--max-commits", default=1000, show_default=True, type=int,
+    help="Maximum commits to analyze.")
+@click.option("--since", default=None,
+    help="Git date filter (e.g., '1 year ago').")
+@click.option("--json", "as_json", is_flag=True, default=False,
+    help="Output as JSON.")
+@click.option("-q", "--quiet", is_flag=True, default=False,
+    help="Suppress progress output.")
+def ownership_cmd(working_dir, bus_factor, max_commits, since, as_json, quiet):
+    """Compute file/module ownership and bus factor (no API key needed).
+
+    \b
+    Analyzes git history to compute per-file and per-directory ownership
+    concentration. Flags bus-factor risks where knowledge is concentrated
+    in a single contributor.
+
+    \b
+    Examples:
+      repoforge ownership -w .
+      repoforge ownership -w . --bus-factor
+      repoforge ownership -w . --since "1 year ago"
+      repoforge ownership -w . --bus-factor --json
+    """
+    import json as json_mod
+    import sys
+
+    from .ownership import analyze_ownership, format_ownership
+
+    if not quiet:
+        print(f"Analyzing ownership in {working_dir} ...", file=sys.stderr)
+
+    report = analyze_ownership(
+        working_dir,
+        max_commits=max_commits,
+        since=since,
+        bus_factor_only=False,
+    )
+
+    if as_json:
+        data = {
+            "total_contributors": report.total_contributors,
+            "total_files": report.total_files,
+            "directories": [
+                {
+                    "directory": d.directory,
+                    "file_count": d.file_count,
+                    "total_commits": d.total_commits,
+                    "top_contributor": d.top_contributor,
+                    "ownership_ratio": round(d.ownership_ratio, 3),
+                    "bus_factor": d.bus_factor,
+                    "risk_level": d.risk_level,
+                }
+                for d in report.directories
+            ],
+        }
+        if bus_factor:
+            data["bus_factor_risks"] = [
+                {
+                    "file": f.file,
+                    "top_contributor": f.top_contributor,
+                    "ownership_ratio": round(f.ownership_ratio, 3),
+                    "bus_factor": f.bus_factor,
+                    "risk_level": f.risk_level,
+                    "total_commits": f.total_commits,
+                }
+                for f in report.bus_factor_risks
+            ]
+        click.echo(json_mod.dumps(data, indent=2))
+    else:
+        click.echo(format_ownership(report, bus_factor=bus_factor))
+
+
+# ---------------------------------------------------------------------------
+# context-prune subcommand (#19)
+# ---------------------------------------------------------------------------
+
+@main.command("context-prune")
+@click.option("-w", "--working-dir", default=".", show_default=True,
+    help="Path to the repo to analyze.",
+    type=click.Path(exists=True, file_okay=False))
+@click.option("--files", multiple=True, required=True,
+    help="File paths to prune context for.")
+@click.option("--depth", default=1, show_default=True, type=int,
+    help="How many levels of dependents to include.")
+@click.option("--no-dependents", is_flag=True, default=False,
+    help="Only show symbols from changed files (skip dependents).")
+@click.option("--json", "as_json", is_flag=True, default=False,
+    help="Output as JSON.")
+@click.option("-q", "--quiet", is_flag=True, default=False,
+    help="Suppress progress output.")
+def context_prune_cmd(working_dir, files, depth, no_dependents, as_json, quiet):
+    """Graph-aware context pruning for LLM review (no API key needed).
+
+    \b
+    Given changed files, extracts only the relevant symbols (functions, classes)
+    that an LLM needs to see for code review, achieving up to 8x token reduction.
+
+    \b
+    Examples:
+      repoforge context-prune --files src/auth.py --files src/models.py
+      repoforge context-prune --files cli.py --no-dependents
+      repoforge context-prune --files cli.py --json
+    """
+    import json as json_mod
+    import sys
+
+    from .context_pruning import format_pruned_context, prune_context
+
+    if not quiet:
+        print(f"Pruning context for {len(files)} file(s) in {working_dir} ...",
+              file=sys.stderr)
+
+    ctx = prune_context(
+        working_dir, list(files),
+        max_depth=depth,
+        include_dependents=not no_dependents,
+    )
+
+    if as_json:
+        data = {
+            "changed_files": ctx.changed_files,
+            "symbols": [
+                {"name": s.name, "kind": s.kind, "file": s.file,
+                 "line_start": s.line_start, "line_end": s.line_end,
+                 "source": s.source}
+                for s in ctx.symbols
+            ],
+            "dependent_symbols": [
+                {"name": s.name, "kind": s.kind, "file": s.file,
+                 "line_start": s.line_start, "line_end": s.line_end,
+                 "source": s.source}
+                for s in ctx.dependent_symbols
+            ],
+            "total_lines_original": ctx.total_lines_original,
+            "total_lines_pruned": ctx.total_lines_pruned,
+            "reduction_ratio": round(ctx.reduction_ratio, 3),
+        }
+        click.echo(json_mod.dumps(data, indent=2))
+    else:
+        click.echo(format_pruned_context(ctx))
+
+
+# ---------------------------------------------------------------------------
+# decisions subcommand (#55)
+# ---------------------------------------------------------------------------
+
+@main.command("decisions")
+@click.option("-w", "--working-dir", default=".", show_default=True,
+    help="Path to the repo to analyze.",
+    type=click.Path(exists=True, file_okay=False))
+@click.option("--stale", is_flag=True, default=False,
+    help="Show only stale decisions.")
+@click.option("--no-commits", is_flag=True, default=False,
+    help="Skip mining commit messages (inline markers only).")
+@click.option("--max-commits", default=500, show_default=True, type=int,
+    help="Maximum commits to analyze for commit-sourced decisions.")
+@click.option("--since", default=None,
+    help="Git date filter (e.g., '6 months ago').")
+@click.option("--stale-threshold", default=50, show_default=True, type=int,
+    help="Lines-changed threshold to flag a decision as stale.")
+@click.option("--json", "as_json", is_flag=True, default=False,
+    help="Output as JSON.")
+@click.option("-q", "--quiet", is_flag=True, default=False,
+    help="Suppress progress output.")
+def decisions_cmd(working_dir, stale, no_commits, max_commits, since,
+                  stale_threshold, as_json, quiet):
+    """Decision registry from git history and inline markers (no API key needed).
+
+    \b
+    Extracts architectural decisions from:
+      - Inline markers (WHY:, DECISION:, TRADEOFF:, etc.)
+      - Git commit messages matching decision patterns
+    Tracks staleness by checking how much the associated code has changed.
+
+    \b
+    Examples:
+      repoforge decisions -w .
+      repoforge decisions -w . --stale
+      repoforge decisions -w . --since "6 months ago"
+      repoforge decisions -w . --no-commits --json
+    """
+    import json as json_mod
+    import sys
+
+    from .decision_intel_v2 import build_decision_registry, format_decision_registry
+
+    if not quiet:
+        print(f"Building decision registry for {working_dir} ...", file=sys.stderr)
+
+    registry = build_decision_registry(
+        working_dir,
+        include_commits=not no_commits,
+        max_commits=max_commits,
+        since=since,
+        stale_threshold=stale_threshold,
+        stale_only=stale,
+    )
+
+    if as_json:
+        data = {
+            "total_decisions": len(registry.entries),
+            "stale_decisions": len(registry.stale_decisions),
+            "files_scanned": registry.files_scanned,
+            "commits_analyzed": registry.commits_analyzed,
+            "entries": [
+                {
+                    "marker": e.marker,
+                    "text": e.text,
+                    "file": e.file,
+                    "line": e.line,
+                    "source": e.source,
+                    "author": e.author,
+                    "date": e.date,
+                    "commit_sha": e.commit_sha,
+                    "is_stale": e.is_stale,
+                    "staleness_reason": e.staleness_reason,
+                    "confidence": e.confidence,
+                    "lines_changed_since": e.lines_changed_since,
+                }
+                for e in registry.entries
+            ],
+        }
+        click.echo(json_mod.dumps(data, indent=2))
+    else:
+        click.echo(format_decision_registry(registry, stale_only=stale))
+
+
+# ---------------------------------------------------------------------------
+# slice subcommand (#54)
+# ---------------------------------------------------------------------------
+
+@main.command("slice")
+@click.option("-w", "--working-dir", default=".", show_default=True,
+    help="Path to the repo to analyze.",
+    type=click.Path(exists=True, file_okay=False))
+@click.option("--file", "file_path", required=True,
+    help="Relative file path to slice.")
+@click.option("--line", "line_num", required=True, type=int,
+    help="Line number (1-indexed) to compute the slice for.")
+@click.option("--json", "as_json", is_flag=True, default=False,
+    help="Output as JSON.")
+@click.option("-q", "--quiet", is_flag=True, default=False,
+    help="Suppress progress output.")
+def slice_cmd(working_dir, file_path, line_num, as_json, quiet):
+    """Compute program slice for a specific line (no API key needed).
+
+    \b
+    Given a file and line number, outputs the minimal set of lines needed
+    to understand the change at that line — variable defs, usages, imports,
+    and control flow that affect or are affected by it.
+
+    \b
+    Examples:
+      repoforge slice --file repoforge/cli.py --line 42
+      repoforge slice --file src/auth.py --line 10 --json
+    """
+    import json as json_mod
+    import sys
+
+    from .program_slicing import compute_slice, format_slice
+
+    if not quiet:
+        print(f"Computing program slice for {file_path}:{line_num} ...",
+              file=sys.stderr)
+
+    result = compute_slice(working_dir, file_path, line_num)
+
+    if as_json:
+        data = {
+            "file": result.file,
+            "target_line": result.target_line,
+            "target_content": result.target_content,
+            "scope_name": result.scope_name,
+            "total_file_lines": result.total_file_lines,
+            "slice_lines": len(result.lines),
+            "reduction_ratio": round(result.reduction_ratio, 3),
+            "lines": [
+                {
+                    "line_number": sl.line_number,
+                    "content": sl.content,
+                    "reason": sl.reason,
+                }
+                for sl in result.lines
+            ],
+        }
+        click.echo(json_mod.dumps(data, indent=2))
+    else:
+        click.echo(format_slice(result))
+
+
+# ---------------------------------------------------------------------------
+# dead-code subcommand (#20)
+# ---------------------------------------------------------------------------
+
+@main.command("dead-code")
+@click.option("-w", "--working-dir", default=".", show_default=True,
+    help="Path to the repo to analyze.",
+    type=click.Path(exists=True, file_okay=False))
+@click.option("--include-tests", is_flag=True, default=False,
+    help="Include test files in analysis.")
+@click.option("--json", "as_json", is_flag=True, default=False,
+    help="Output as JSON.")
+@click.option("-q", "--quiet", is_flag=True, default=False,
+    help="Suppress progress output.")
+def dead_code_cmd(working_dir, include_tests, as_json, quiet):
+    """Detect potentially dead code via graph analysis (no API key needed).
+
+    \b
+    Finds exported symbols with zero dependents (no other file imports them)
+    and isolated modules with no incoming imports. Pure graph traversal, no LLM.
+
+    \b
+    Examples:
+      repoforge dead-code -w .
+      repoforge dead-code -w . --include-tests
+      repoforge dead-code -w . --json
+    """
+    import json as json_mod
+    import sys
+
+    from .dead_code import detect_dead_code, format_dead_code_report
+
+    if not quiet:
+        print(f"Detecting dead code in {working_dir} ...", file=sys.stderr)
+
+    report = detect_dead_code(working_dir, include_tests=include_tests)
+
+    if as_json:
+        data = {
+            "isolated_modules": report.isolated_modules,
+            "dead_symbols": [
+                {"name": s.name, "kind": s.kind, "file": s.file,
+                 "confidence": s.confidence}
+                for s in report.dead_symbols
+            ],
+            "entry_points": report.entry_points,
+            "total_modules": report.total_modules,
+            "total_exports": report.total_exports,
+        }
+        click.echo(json_mod.dumps(data, indent=2))
+    else:
+        click.echo(format_dead_code_report(report))
+
+
+# ---------------------------------------------------------------------------
+# analyze subcommand (#56 — 5-layer deep analysis)
+# ---------------------------------------------------------------------------
+
+@main.command("analyze")
+@click.option("-w", "--working-dir", default=".", show_default=True,
+    help="Path to the repo to analyze.",
+    type=click.Path(exists=True, file_okay=False))
+@click.option("--depth", default=5, show_default=True, type=int,
+    help="Analysis depth (1=AST, 2=+CallGraph, 3=+CFG, 4=+DFG, 5=+PDG).")
+@click.option("--file", "file_path", default=None,
+    help="Analyze a single file (relative path).")
+@click.option("--json", "as_json", is_flag=True, default=False,
+    help="Output as JSON.")
+@click.option("-q", "--quiet", is_flag=True, default=False,
+    help="Suppress progress output.")
+def analyze_cmd(working_dir, depth, file_path, as_json, quiet):
+    """Multi-layer code analysis: AST + Call Graph + CFG + DFG + PDG (no API key needed).
+
+    \b
+    Produces a 5-layer analysis report with complexity hotspots,
+    control flow patterns, data flow chains, and program dependencies.
+
+    \b
+    Layers:
+      1. AST        — functions, classes, methods
+      2. Call Graph  — who calls whom
+      3. CFG         — branches, loops, conditionals
+      4. DFG         — variable definitions and uses
+      5. PDG         — combined control + data dependencies
+
+    \b
+    Examples:
+      repoforge analyze -w .                        # full repo, all 5 layers
+      repoforge analyze -w . --depth 3              # AST + calls + CFG only
+      repoforge analyze --file repoforge/cli.py     # single file
+      repoforge analyze -w . --json                 # JSON output
+    """
+    import sys
+
+    from .deep_analysis import (
+        analysis_to_json,
+        analyze_file,
+        analyze_repo,
+        format_analysis,
+    )
+
+    depth = max(1, min(5, depth))
+
+    if file_path:
+        if not quiet:
+            print(f"Analyzing {file_path} (depth {depth}/5) ...", file=sys.stderr)
+        result = analyze_file(working_dir, file_path, depth=depth)
+        if as_json:
+            click.echo(analysis_to_json(result))
+        else:
+            click.echo(format_analysis(result))
+    else:
+        if not quiet:
+            print(f"Analyzing repository {working_dir} (depth {depth}/5) ...",
+                  file=sys.stderr)
+        result = analyze_repo(working_dir, depth=depth)
+        if as_json:
+            click.echo(analysis_to_json(result))
+        else:
+            click.echo(format_analysis(result))
+
+
+# ---------------------------------------------------------------------------
+# search subcommand (#57 — semantic code search by behavior)
+# ---------------------------------------------------------------------------
+
+@main.command("search")
+@click.argument("query_text")
+@click.option("-w", "--working-dir", default=".", show_default=True,
+    help="Path to the repo to search.",
+    type=click.Path(exists=True, file_okay=False))
+@click.option("--behavior", "behavior_query", default=None,
+    help="Search by behavioral description (alternative to positional query).")
+@click.option("--depth", default=3, show_default=True, type=int,
+    help="Analysis depth for behavior extraction (1-5).")
+@click.option("--top-k", default=10, show_default=True, type=int,
+    help="Maximum number of results.")
+@click.option("--json", "as_json", is_flag=True, default=False,
+    help="Output as JSON.")
+@click.option("-q", "--quiet", is_flag=True, default=False,
+    help="Suppress progress output.")
+def search_cmd(query_text, working_dir, behavior_query, depth, top_k, as_json, quiet):
+    """Semantic code search by behavior (no API key needed).
+
+    \b
+    Find code by what it DOES, not just keyword matching.
+    Uses multi-layer analysis (AST + call graph + control flow) to create
+    rich behavioral descriptions for each function.
+
+    \b
+    Examples:
+      repoforge search "JWT validation"
+      repoforge search "authenticates user requests"
+      repoforge search --behavior "handles file uploads" -w .
+      repoforge search "error handling" --depth 5 --json
+    """
+    import sys
+
+    from .semantic_search import (
+        format_search_results,
+        search_repo,
+        search_results_to_json,
+    )
+
+    effective_query = behavior_query or query_text
+    depth = max(1, min(5, depth))
+
+    if not quiet:
+        print(f"Searching for: {effective_query!r} (depth {depth}/5) ...",
+              file=sys.stderr)
+
+    results = search_repo(
+        working_dir, effective_query,
+        depth=depth, top_k=top_k,
+    )
+
+    if as_json:
+        click.echo(search_results_to_json(results))
+    else:
+        click.echo(format_search_results(results))
+
+
+# ---------------------------------------------------------------------------
+# registry subcommand group — cross-repo code graph registry
+# ---------------------------------------------------------------------------
+
+@main.group("registry")
+def registry_group():
+    """Cross-repo code graph registry (no API key needed).
+
+    \b
+    Register multiple repos, build structural graphs for each,
+    and search across all repos for similar patterns.
+
+    \b
+    Commands:
+      add     Register a repository
+      remove  Unregister a repository
+      list    List all registered repos
+      build   Rebuild the graph for a repo
+      search  Search across all registered repos
+
+    \b
+    Examples:
+      repoforge registry add /path/to/repo
+      repoforge registry list
+      repoforge registry search "JWT validation"
+      repoforge registry build /path/to/repo
+      repoforge registry remove /path/to/repo
+    """
+
+
+@registry_group.command("add")
+@click.argument("path", type=click.Path(exists=True, file_okay=False))
+@click.option("-q", "--quiet", is_flag=True, default=False,
+    help="Suppress progress output.")
+def registry_add_cmd(path, quiet):
+    """Register a repository in the cross-repo registry.
+
+    Resolves the path to absolute, validates it, adds it to the registry,
+    and builds the graph immediately.
+    """
+    import sys
+
+    from .cross_repo import registry_add
+
+    if not quiet:
+        print(f"Registering {path} ...", file=sys.stderr)
+
+    try:
+        entry = registry_add(path)
+    except (FileNotFoundError, ValueError) as exc:
+        click.echo(f"Error: {exc}", err=True)
+        raise SystemExit(1) from exc
+
+    click.echo(
+        f"Registered: {entry.name} "
+        f"({entry.node_count} nodes, {entry.edge_count} edges, "
+        f"{entry.file_count} files)"
+    )
+
+
+@registry_group.command("remove")
+@click.argument("path", type=click.Path())
+@click.option("-q", "--quiet", is_flag=True, default=False,
+    help="Suppress progress output.")
+def registry_remove_cmd(path, quiet):
+    """Remove a repository from the registry."""
+    from .cross_repo import registry_remove
+
+    if registry_remove(path):
+        click.echo(f"Removed: {path}")
+    else:
+        click.echo(f"Not found in registry: {path}", err=True)
+        raise SystemExit(1)
+
+
+@registry_group.command("list")
+@click.option("--json", "as_json", is_flag=True, default=False,
+    help="Output as JSON.")
+def registry_list_cmd(as_json):
+    """List all registered repositories."""
+    import json as json_mod
+
+    from .cross_repo import format_registry_list, registry_list
+
+    entries = registry_list()
+
+    if as_json:
+        data = [e.to_dict() for e in entries]
+        click.echo(json_mod.dumps(data, indent=2))
+    else:
+        click.echo(format_registry_list(entries))
+
+
+@registry_group.command("build")
+@click.argument("path", type=click.Path(exists=True, file_okay=False))
+@click.option("-q", "--quiet", is_flag=True, default=False,
+    help="Suppress progress output.")
+def registry_build_cmd(path, quiet):
+    """Rebuild the graph for a registered repository."""
+    import sys
+
+    from .cross_repo import registry_build
+
+    if not quiet:
+        print(f"Rebuilding graph for {path} ...", file=sys.stderr)
+
+    try:
+        entry = registry_build(path)
+    except KeyError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        raise SystemExit(1) from exc
+
+    click.echo(
+        f"Built: {entry.name} "
+        f"({entry.node_count} nodes, {entry.edge_count} edges, "
+        f"{entry.file_count} files)"
+    )
+
+
+@registry_group.command("search")
+@click.argument("query")
+@click.option("--top-k", default=10, show_default=True, type=int,
+    help="Maximum number of results.")
+@click.option("--depth", default=3, show_default=True, type=int,
+    help="Analysis depth for behavior extraction (1-5).")
+@click.option("--json", "as_json", is_flag=True, default=False,
+    help="Output as JSON.")
+@click.option("-q", "--quiet", is_flag=True, default=False,
+    help="Suppress progress output.")
+def registry_search_cmd(query, top_k, depth, as_json, quiet):
+    """Search across all registered repos by behavior.
+
+    \b
+    Find code by what it DOES across multiple projects.
+
+    \b
+    Examples:
+      repoforge registry search "JWT validation"
+      repoforge registry search "file upload handling" --depth 5
+      repoforge registry search "error retry logic" --json
+    """
+    import sys
+
+    from .cross_repo import (
+        cross_repo_results_to_json,
+        format_cross_repo_results,
+        registry_search,
+    )
+
+    depth = max(1, min(5, depth))
+
+    if not quiet:
+        print(f"Searching across repos for: {query!r} ...", file=sys.stderr)
+
+    results = registry_search(query, top_k=top_k, depth=depth)
+
+    if as_json:
+        click.echo(cross_repo_results_to_json(results))
+    else:
+        click.echo(format_cross_repo_results(results))
 
 
 # ---------------------------------------------------------------------------

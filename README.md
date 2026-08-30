@@ -1,76 +1,80 @@
-# ⚒ RepoForge
+# RepoForge
 
-> AI-powered code analysis tool that generates **technical documentation**, **AI agent skills**, **security scans**, **code graphs**, and **LLM-ready exports** from any codebase — works with any LLM.
+Read this in: [English](README.md) · [Español](README.es.md)
 
-[![PyPI version](https://img.shields.io/pypi/v/repoforge-ai)](https://pypi.org/project/repoforge-ai/)
+AI-powered code analysis for generating technical docs, agent skills, security scans, code graphs, architecture diagrams, and LLM-ready repo exports.
+
+[![PyPI version](https://img.shields.io/pypi/v/repoforge-ai?label=PyPI&color=blue)](https://pypi.org/project/repoforge-ai/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
----
+[Live Demo](https://repoforge.javierzader.com) · [PyPI](https://pypi.org/project/repoforge-ai/) · [GitHub](https://github.com/JNZader/repoforge) · [Issues](https://github.com/JNZader/repoforge/issues)
 
-## What it does
+## What It Is
 
-RepoForge analyzes your codebase and generates multiple types of output:
+RepoForge scans a repository once and produces several outputs from the same analysis: a Docsify-ready documentation site, multi-tool agent skills, Mermaid/SVG diagrams, code graphs, security scans, and single-file LLM context exports.
 
-### 1. `repoforge docs` — Technical Documentation
+The core idea: mix **deterministic analysis** (stack detection, graphing, scoring, scanning, coverage parsing, diagram generation) with **optional LLM text generation**, instead of pretending the model understands the repo by magic. The LLM writes prose; everything structural is computed.
 
-Generates a complete **Docsify-ready** documentation site adapted to your project type:
+Use it when you need to:
 
-| Project type | Specific chapters |
-|---|---|
-| Web service | Data Models · API Reference |
-| Frontend SPA | Components · State Management |
-| CLI tool | Commands · Configuration |
-| Data science | Data Pipeline · Models & Training · Experiments |
-| Library/SDK | Public API · Integration Guide |
-| Mobile app | Screens & Navigation · Native Integrations |
-| Infra/DevOps | Resources · Variables · Deployment Guide |
-| **Monorepo** | Global chapters + **per-layer subdocs** (each layer gets its own set) |
+- onboard engineers into an unfamiliar codebase fast
+- generate internal docs without hand-writing every chapter
+- create agent instructions for Claude Code, OpenCode, Cursor, Codex, Gemini, and Copilot from one source
+- flatten a repository into a single LLM-friendly context file
+- audit generated markdown for secrets, prompt injection, or unsafe commands
+- understand architectural blast radius before refactoring
+- publish a docs site to GitHub Pages without building a custom docs pipeline
 
-All types share: Overview · Quick Start · Architecture · Core Mechanisms · Dev Guide
+## Quick Start
 
-Output is a `docs/` folder ready for **GitHub Pages** — zero extra config.
+```bash
+pip install repoforge-ai
 
-### 2. `repoforge skills` — AI Agent Skills
+# Generate Docsify-ready docs (needs an LLM API key)
+repoforge docs -w /path/to/repo --lang English
 
-Generates `SKILL.md` and `AGENT.md` compatible with:
-- **Claude Code** (`.claude/skills/`, `.claude/agents/`)
-- **OpenCode** (mirrored to `.opencode/`)
-- **Cursor** (`.cursor/rules/*.mdc`)
-- **Codex** (`AGENTS.md`)
-- **Gemini CLI** (`GEMINI.md`)
-- **GitHub Copilot** (`.github/copilot-instructions.md`)
-- **agent-teams-lite** (skill registry at `.atl/skill-registry.md`)
-- **Gentleman-Skills** format (YAML frontmatter, `Trigger:`, `Critical Patterns`)
+# Generate multi-tool skills (needs an LLM API key)
+repoforge skills -w /path/to/repo --targets all
 
----
+# Export repo context for an LLM (no API key)
+repoforge export -w /path/to/repo -o context.md
 
-## What's New in v0.4
+# Deterministic security scan (no API key)
+repoforge scan -w /path/to/repo
+```
 
-| # | Feature | Command / Flag | Description |
-|---|---------|---------------|-------------|
-| 1 | **Mermaid diagrams** | `repoforge diagram` | Generate dependency, directory, and call flow Mermaid diagrams from code analysis (no API key) |
-| 2 | **Symbol-level mapping** | `repoforge/symbols/` | Regex-based symbol extraction, call graph construction, and Mermaid rendering at function/class level |
-| 3 | **Incremental docs** | `--incremental` | Only regenerate stale chapters via git diff + manifest tracking |
-| 4 | **Dependency health** | auto in `docs` pipeline | Tree depth, transitive deps, duplicates, license conflicts, health score report |
-| 5 | **Coverage unification** | auto-detected | Parse Cobertura, lcov, coverage.py JSON, and JaCoCo into unified coverage reports for docs |
+Notes:
 
-### Previous (v0.3)
+- CLI command: `repoforge`
+- PyPI package name: `repoforge-ai` (`repoforge` was already taken)
+- Recommended for speed: install `ripgrep`
 
-| # | Feature | Command / Flag | Description |
-|---|---------|---------------|-------------|
-| 1 | **LLM Export** | `repoforge export` | Flatten repo into single LLM-optimized file (markdown or XML) |
-| 2 | **Complexity routing** | `--complexity auto\|small\|medium\|large` | Auto-routes generation depth by repo size |
-| 3 | **Hooks generation** | `--with-hooks` | Generates HOOKS.md with recommended Claude Code hooks |
-| 4 | **Quality scorer** | `repoforge score` | Standalone scorer with 7 dimensions (no API key) |
-| 5 | **Multi-tool targets** | `--targets claude,cursor,codex,...` | Generate for 6 AI tools at once |
-| 6 | **Progressive disclosure** | `--disclosure tiered\|full` | L1/L2/L3 tier markers + DISCOVERY_INDEX.md |
-| 7 | **Token compressor** | `repoforge compress` | Reduce token count by 50-75% (no API key) |
-| 8 | **Security scanner** | `repoforge scan` | 37 rules in 5 categories (no API key) |
-| 9 | **Plugin hierarchy** | `--plugin` | Generates plugin.json + commands/ directory |
-| 10 | **Code graph** | `repoforge graph` | Dependency graph with blast radius analysis |
+## Table of Contents
 
----
+- [Installation](#installation)
+- [Command Overview](#command-overview)
+- [Model Setup](#model-setup)
+- [Technical Quick Start](#technical-quick-start)
+- [`docs` Command](#docs-command)
+- [`skills` Command](#skills-command)
+- [`export` Command](#export-command)
+- [`score` Command](#score-command)
+- [`scan` Command](#scan-command)
+- [`compress` Command](#compress-command)
+- [`graph` Command](#graph-command)
+- [`diagram` Command](#diagram-command)
+- [Code Analysis Commands](#code-analysis-commands)
+- [MCP Server](#mcp-server)
+- [GitHub Pages Deployment](#github-pages-deployment)
+- [Monorepo Support](#monorepo-support)
+- [`repoforge.yaml` - Per-Repo Config](#repoforgeyaml--per-repo-config)
+- [Python API](#python-api)
+- [How It Works](#how-it-works)
+- [Cost](#cost)
+- [Supported Stacks](#supported-stacks)
+- [License](#license)
+- [Inspirations](#inspirations)
 
 ## Installation
 
@@ -78,680 +82,871 @@ Generates `SKILL.md` and `AGENT.md` compatible with:
 pip install repoforge-ai
 ```
 
-> **Note:** The CLI command is still `repoforge` after installation.
-> The PyPI package name is `repoforge-ai` (the name `repoforge` was already taken).
+### Optional extras
 
-**Recommended:** install [ripgrep](https://github.com/BurntSushi/ripgrep) for 10-100x faster scanning:
-```bash
-brew install ripgrep          # macOS
-sudo apt install ripgrep      # Ubuntu/Debian
-scoop install ripgrep         # Windows
-```
-
----
-
-## Quick start
+Some commands need extra dependencies. Install only what you use:
 
 ```bash
-# Generate docs (auto-detects language, Docsify-ready)
-repoforge docs -w /path/to/repo --lang Spanish -o docs
-
-# Preview locally (opens browser automatically)
-repoforge docs -w . --serve
-
-# Generate SKILL.md + AGENT.md for Claude Code
-repoforge skills -w /path/to/repo
-
-# Generate for ALL AI tools at once
-repoforge skills -w /path/to/repo --targets all
-
-# Generate + score + scan + compress in one shot
-repoforge skills -w /path/to/repo --score --scan --compress
-
-# Flatten repo for LLM context
-repoforge export -w /path/to/repo -o context.md
-
-# Build dependency graph
-repoforge graph -w /path/to/repo --format mermaid
-
-# Generate Mermaid architecture diagrams
-repoforge diagram -w /path/to/repo --type dependency
-
-# Incremental docs (only regenerate stale chapters)
-repoforge docs -w /path/to/repo --incremental
-
-# Open skills browser
-repoforge skills --serve-only
-
-# See what would be generated (no LLM calls, free)
-repoforge docs --dry-run
-repoforge skills --dry-run
+pip install "repoforge-ai[intelligence]"  # multi-language AST analysis (tree-sitter) for `analyze`, `slice`
+pip install "repoforge-ai[search]"        # semantic search index (faiss) for `index`/`query`
+pip install "repoforge-ai[pdf]"           # PDF ingestion for `skills-from-docs`
+pip install "repoforge-ai[youtube]"       # YouTube transcript ingestion for `skills-from-docs`
+pip install "repoforge-ai[all]"           # everything above
 ```
 
----
+`ripgrep` is strongly recommended for faster scanning:
 
-## Model setup
+```bash
+brew install ripgrep
+sudo apt install ripgrep
+scoop install ripgrep
+```
 
-RepoForge auto-detects your API key from env vars and picks the best available model.
+## Command Overview
 
-### GitHub Models — free with GitHub Copilot ⭐
+### Generation commands (need an LLM API key)
+
+| Command | What it does |
+|---|---|
+| `repoforge docs` | Generate Docsify-ready technical documentation |
+| `repoforge skills` | Generate skills and agents for coding tools |
+| `repoforge skills-from-docs` | Generate `SKILL.md` from external docs (URL, GitHub repo, local dir, PDF, YouTube, notebook) |
+| `repoforge index` | Build a semantic search index from codebase entities |
+
+### Deterministic commands (no API key)
+
+| Command | What it does |
+|---|---|
+| `repoforge export` | Flatten a repo into one LLM-optimized file |
+| `repoforge score` | Score generated `SKILL.md` files across 7 dimensions |
+| `repoforge scan` | Security-scan generated markdown |
+| `repoforge compress` | Token-optimize generated markdown |
+| `repoforge graph` | Build dependency/call graphs and blast-radius views |
+| `repoforge diagram` / `diagrams` | Generate Mermaid, SVG, ERD, K8s, and OpenAPI diagrams |
+| `repoforge check` | Validate code references in generated docs |
+| `repoforge diff` | Entity-level semantic diff between two git refs |
+| `repoforge audit` | Run all analysis checks in one shot |
+| `repoforge analyze` | Multi-layer analysis: AST + call graph + CFG + DFG + PDG |
+| `repoforge search` | Semantic code search by behavior |
+| `repoforge query` | Search a previously built index |
+| `repoforge blast-radius` | Transitive blast radius of a change |
+| `repoforge change-impact` | Identify which tests to run for a change |
+| `repoforge co-change` | Detect files that always change together |
+| `repoforge ownership` | Compute file/module ownership and bus factor |
+| `repoforge dead-code` | Detect potentially dead code via graph analysis |
+| `repoforge slice` | Program slice for a specific line |
+| `repoforge decisions` | Decision registry from git history and inline markers |
+| `repoforge context-prune` | Graph-aware context pruning for LLM review |
+| `repoforge prompts` | Generate reusable analysis prompts from a scan |
+| `repoforge import-docs` | Import external dependency docs to enrich context |
+| `repoforge validate-skills` | Validate `SKILL.md` files against the standard format |
+| `repoforge registry` | Cross-repo code graph registry (`add`/`remove`/`list`/`build`/`search`) |
+
+Run `repoforge <command> --help` for the full option list of any command.
+
+### Common flags
+
+- `-w`, `--working-dir` / `--workspace`: repo path
+- `-o`, `--output` / `--output-dir`: output file or directory
+- `--model`: LLM model
+- `--dry-run`: plan only, no LLM calls
+- `-q`, `--quiet`: quieter output
+
+## Model Setup
+
+RepoForge auto-detects providers from environment variables, but explicit setup matters because provider behavior is NOT the same.
+
+### GitHub Models
+
+Best low-friction option if you already use GitHub tooling.
+
 ```bash
 export GITHUB_TOKEN=$(gh auth token)
-repoforge docs -w . --model github/gpt-4o-mini --lang Spanish
+repoforge docs -w . --model github/gpt-4o-mini
 ```
 
-### Groq — free tier, very fast
+For GitHub Actions, the built-in `GITHUB_TOKEN` is not enough for GitHub Models. You need a PAT with `models:read` scope, usually stored as `GH_MODELS_TOKEN`.
+
+### Groq
+
 ```bash
 export GROQ_API_KEY=gsk_...
 repoforge docs -w . --model groq/llama-3.3-70b-versatile
 ```
 
-### Ollama — 100% local, free
+### Ollama
+
 ```bash
 ollama pull qwen2.5-coder:14b
 repoforge docs -w . --model ollama/qwen2.5-coder:14b
 ```
 
-### Claude Haiku — cheap, ~$0.05/run
+### Claude Haiku
+
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 repoforge docs -w . --model claude-haiku-3-5
 ```
 
 ### OpenAI
+
 ```bash
 export OPENAI_API_KEY=sk-...
 repoforge docs -w . --model gpt-4o-mini
 ```
 
----
+### Practical model notes
 
-## `docs` command
+- `github/gpt-4o-mini`: easiest default for docs and skills if you already use GitHub
+- `claude-haiku-3-5`: cheap and usually good enough for generation
+- `ollama/...`: local and free, but quality depends heavily on the model you pull
+- `groq/...`: fast and free-tier friendly, but rate limits matter
+- `gpt-4o-mini`: solid baseline if you already have OpenAI wired in
 
+## Technical Quick Start
+
+```bash
+# Docs
+repoforge docs -w /path/to/repo --lang English -o docs
+
+# Serve docs locally
+repoforge docs -w . --serve
+
+# Generate skills for Claude + OpenCode + Cursor + Codex
+repoforge skills -w /path/to/repo --targets claude,opencode,cursor,codex
+
+# Generate skills and immediately score, scan, and compress them
+repoforge skills -w /path/to/repo --score --scan --compress
+
+# Export repo context
+repoforge export -w /path/to/repo -o context.md
+
+# Build dependency graph
+repoforge graph -w /path/to/repo --format mermaid
+
+# Generate dependency diagram
+repoforge diagram -w /path/to/repo --type dependency
+
+# Incremental docs
+repoforge docs -w /path/to/repo --incremental
+
+# Plan only
+repoforge docs -w /path/to/repo --dry-run
+repoforge skills -w /path/to/repo --dry-run
 ```
+
+## `docs` Command
+
+Generates a Docsify-ready technical documentation site adapted to project type.
+
+| Project type | Typical chapters |
+|---|---|
+| Web service | Data Models, API Reference |
+| Frontend SPA | Components, State Management |
+| CLI tool | Commands, Configuration |
+| Data science | Data Pipeline, Models and Training, Experiments |
+| Library or SDK | Public API, Integration Guide |
+| Mobile app | Screens and Navigation, Native Integrations |
+| Infra or DevOps | Resources, Variables, Deployment Guide |
+| Monorepo | Global chapters plus per-layer subdocs |
+
+```text
 repoforge docs [OPTIONS]
 
   -w, --working-dir DIR     Repo to analyze  [default: .]
   -o, --output-dir DIR      Output directory  [default: docs]
-  --model TEXT              LLM model (auto from env if not set)
+  --model TEXT              LLM model
   --lang LANGUAGE           Documentation language  [default: English]
-                            English|Spanish|French|German|Portuguese|
-                            Chinese|Japanese|Korean|Russian|Italian|Dutch
-  --name TEXT               Project name (auto-detected by default)
-  --complexity LEVEL        Override repo complexity  [default: auto]
-                            auto|small|medium|large
-  --theme [vue|dark|buble]  Docsify theme  [default: vue]
-  --serve                   Serve docs after generating (opens browser)
+  --name TEXT               Project name override
+  --complexity LEVEL        auto|small|medium|large
+  --theme THEME             vue|dark|buble|pure
+  --serve                   Generate and open local docs
   --serve-only              Skip generation, serve existing docs
-  --port INT                Server port  [default: 8000]
-  --incremental             Only regenerate chapters whose source files changed (git diff + manifest)
-  --dry-run                 Plan only, no LLM calls, no files written
-  -q, --quiet               Suppress progress output
+  --port INT                Local server port  [default: 8000]
+  --chunked                 Use chunked generation mode
+  --verify / --no-verify    Enable or disable Stage C verification
+  --verify-model TEXT       Verification model override
+  --no-verify-docs          Disable verification and deterministic corrections
+  --facts-only              Emit factual extraction without prose
+  --incremental             Regenerate only stale chapters
+  --semantic-dedup          Skip semantically unchanged chapters in incremental mode
+  --semantic-threshold FLOAT
+  --watch                   Regenerate docs when files change
+  --watch-interval FLOAT
+  --link-style STYLE        backtick|wiki
+  --diagrams                Embed Mermaid diagrams in architecture docs
+  --max-workers INT         Parallel chapter workers
+  --model-heavy TEXT        Heavy-tier model when --model auto
+  --model-standard TEXT     Standard-tier model when --model auto
+  --model-light TEXT        Light-tier model when --model auto
+  --dry-run
+  -q, --quiet
 ```
+
+Supported languages: English, Spanish, French, German, Portuguese, Chinese, Japanese, Korean, Russian, Italian, Dutch.
+
+### Output
+
+Up to 8 chapters plus Docsify scaffolding:
+
+- `index.md`
+- `01-overview.md`
+- `02-quickstart.md`
+- `03-architecture.md`
+- `04-core-mechanisms.md`
+- `05-data-models.md` when relevant
+- `06-api-reference.md` when relevant
+- `07-dev-guide.md`
+- `index.html`, `_sidebar.md`, and `.nojekyll` for Docsify and GitHub Pages
 
 ### Incremental mode
 
-With `--incremental`, RepoForge tracks which source files feed each doc chapter via a `.manifest.json` file. On re-run, it uses `git diff` to detect changed files and only regenerates stale chapters — saving LLM calls and time on large projects.
+With `--incremental`, RepoForge tracks chapter dependencies in a manifest and uses `git diff` to decide which chapters are stale. That matters on large repos because regenerating everything is just burning tokens for no reason.
+
+`--semantic-dedup` goes one step further by using embedding similarity to skip chapters whose meaning did not materially change, even if files changed.
 
 ### Complexity levels
 
-| Level | Files | Effect |
-|---|---|---|
-| `auto` | — | Auto-detected from file count + layer count |
-| `small` | ≤20 | Fewer chapters, detailed per-file coverage |
-| `medium` | ≤200 | Standard depth (default behavior) |
-| `large` | >200 | Concise chapters, more architectural focus |
+| Level | Behavior |
+|---|---|
+| `auto` | Detect from file count and layer count |
+| `small` | Fewer files, denser per-file coverage |
+| `medium` | Balanced depth |
+| `large` | More architectural summarization, less file-by-file noise |
 
-### Publish to GitHub Pages
-
-RepoForge can publish docs automatically with GitHub Actions.
-
-### Version pinning for workflow stability
-
-When using the RepoForge GitHub Action, pin to a tagged release instead of `@main`:
-
-```yaml
-uses: JNZader/repoforge@v0.2.0
-```
-
-This keeps consumer workflows stable and reproducible. Update the tag explicitly when you want new behavior.
-
-Safe defaults (recommended):
-
-1. Add `.github/workflows/docs.yml` to your repository.
-2. Push to `main`.
-3. By default, it runs in `generate-only` mode (`deploy_mode=none`) so it does not touch an existing Pages site.
-
-To enable deploy (explicit opt-in):
-
-1. Set repository variable `REPOFORGE_DOCS_DEPLOY_MODE` to one of:
-   - `auto` (if no live site -> deploy root, if live site -> deploy subpath)
-   - `main` (force root deploy; may replace existing site)
-   - `subpath` (deploy to `/repoforge/` on `gh-pages`, preserving existing files)
-2. Set repository variable `REPOFORGE_DOCS_CONFIRM_DEPLOY=true`.
-3. Optional: set `REPOFORGE_DOCS_SUBPATH_PREFIX` (default: `repoforge`).
-
-You can also run it manually from Actions (`workflow_dispatch`) with `deploy_mode`, `confirm_deploy`, and `subpath_prefix` inputs.
-
-Note: subpath preservation uses `gh-pages` branch deploy. If your repo uses Pages `build_type=workflow`, the workflow will fall back to generate-only for safety.
-
-Required Pages configuration by deploy mode:
-
-| `deploy_mode` | Deployment mechanism | Required Pages setting |
-|---|---|---|
-| `none` | Generate only (no publish) | Any |
-| `main` | `actions/deploy-pages` (artifact) | **Build and deployment: GitHub Actions** |
-| `subpath` | `peaceiris/actions-gh-pages` (branch, `keep_files`) | **Deploy from a branch** → `gh-pages` + `/ (root)` |
-| `auto` | Chooses `main` or `subpath` | Must match chosen target (`main` => GitHub Actions, `subpath` => `gh-pages`) |
-
-If `auto` selects `subpath` but Pages is configured as `GitHub Actions`, the subpath branch publish may succeed but not be publicly visible.
-
-After deploy, your docs are available at:
-
-`https://<your-user>.github.io/<your-repo>/`
-
-If deployed in subpath mode:
-
-`https://<your-user>.github.io/<your-repo>/<subpath-prefix>/`
-
-### Example: adding docs to a repo with existing Pages
-
-Your repo already has a live site at `https://youruser.github.io/yourrepo/` and you want to add RepoForge docs without breaking it.
+### Local preview
 
 ```bash
-# 1. Copy the docs workflow to your repo
-cp .github/workflows/docs.yml <your-repo>/.github/workflows/docs.yml
-
-# 2. Set repo variables for safe subpath deploy
-gh variable set REPOFORGE_DOCS_DEPLOY_MODE --body "auto" --repo youruser/yourrepo
-gh variable set REPOFORGE_DOCS_CONFIRM_DEPLOY --body "true" --repo youruser/yourrepo
-gh variable set REPOFORGE_DOCS_SUBPATH_PREFIX --body "docs" --repo youruser/yourrepo
-
-# 3. Set Pages source to gh-pages branch (required for subpath mode)
-#    Settings → Pages → Build and deployment → Deploy from a branch → gh-pages / (root)
-
-# 4. Add the GH_MODELS_TOKEN secret (PAT with models:read scope)
-gh secret set GH_MODELS_TOKEN --repo youruser/yourrepo
-
-# 5. Push and let the workflow run
-git add .github/workflows/docs.yml && git commit -m "ci: add repoforge docs" && git push
+repoforge docs -w . --serve
 ```
 
-Result:
-- Your existing site stays at `https://youruser.github.io/yourrepo/` (unchanged).
-- RepoForge docs appear at `https://youruser.github.io/yourrepo/docs/`.
-
-### Manual flow
-
-Still supported if you prefer not to use the workflow:
+Or serve the generated folder yourself:
 
 ```bash
-repoforge docs -w . -o docs --lang English
-git add docs/ && git commit -m "docs: generate documentation"
-git push
-# Settings → Pages → Source: /docs on main branch
+python3 -m http.server 8000 --directory docs
 ```
 
----
+## `skills` Command
 
-## `skills` command
+Generates `SKILL.md` and `AGENT.md` artifacts for six coding-agent targets from a single scan.
 
-```
+```text
 repoforge skills [OPTIONS]
 
   -w, --working-dir DIR     Repo to analyze  [default: .]
   -o, --output-dir DIR      Output directory  [default: .claude]
   --model TEXT              LLM model
-  --complexity LEVEL        Override repo complexity  [default: auto]
-                            auto|small|medium|large
-  --targets TARGETS         Comma-separated output targets  [default: claude,opencode]
-                            claude|opencode|cursor|codex|gemini|copilot|all
-  --disclosure MODE         Skill output mode  [default: tiered]
-                            tiered (L1/L2/L3 markers) | full (no markers)
-  --with-hooks              Generate HOOKS.md with recommended Claude Code hooks
-  --plugin                  Generate plugin.json + commands/ hierarchy
-  --score                   After generation, score quality of SKILL.md files
-  --compress                After generation, compress skills to reduce tokens
-  --aggressive              Use aggressive compression (with --compress)
-  --scan                    After generation, run security scanner
-  --no-opencode             Skip mirroring to .opencode/
-  --serve                   Open skills browser after generating
-  --serve-only              Skip generation, open existing skills browser
-  --port INT                Server port  [default: 8765]
-  --dry-run                 Plan only, no LLM calls
-  -q, --quiet               Suppress progress output
+  --complexity LEVEL        auto|small|medium|large
+  --targets TARGETS         claude|opencode|cursor|codex|gemini|copilot|all
+  --disclosure MODE         tiered|full
+  --with-hooks              Generate HOOKS.md
+  --plugin                  Generate plugin.json + commands/
+  --score                   Score skills after generation
+  --compress                Compress skills after generation
+  --aggressive              Stronger compression mode
+  --scan                    Run security scan after generation
+  --no-opencode             Skip mirror to .opencode/
+  --serve                   Open skills browser
+  --serve-only              Open existing skills browser
+  --port INT                Browser port  [default: 8765]
+  --dry-run
+  -q, --quiet
 ```
 
-### Multi-tool output
+### Output targets
 
-| Target | Output location | Format |
+| Target | Output | Format |
 |---|---|---|
-| `claude` | `.claude/skills/`, `.claude/agents/` | SKILL.md + AGENT.md |
-| `opencode` | `.opencode/` | Mirror of `.claude/` |
-| `cursor` | `.cursor/rules/*.mdc` | Cursor rules format |
-| `codex` | `AGENTS.md` (project root) | Single consolidated file |
-| `gemini` | `GEMINI.md` (project root) | Gemini CLI instructions |
+| `claude` | `.claude/skills/`, `.claude/agents/` | `SKILL.md` and `AGENT.md` |
+| `opencode` | `.opencode/` | Mirror of Claude output |
+| `cursor` | `.cursor/rules/*.mdc` | Cursor rules |
+| `codex` | `AGENTS.md` | Consolidated instructions |
+| `gemini` | `GEMINI.md` | Gemini CLI instructions |
 | `copilot` | `.github/copilot-instructions.md` | Copilot instructions |
 
-### Output layout
+The agent-teams-lite registry output (`.atl/skill-registry.md`) is also produced.
 
-```
+### Example layout
+
+```text
 .claude/
 ├── skills/
-│   ├── backend/
-│   │   ├── SKILL.md              ← layer-level skill
-│   │   ├── auth/SKILL.md         ← per-module skill
-│   │   └── reports/SKILL.md
-│   └── frontend/
-│       ├── SKILL.md
-│       └── useGEELayers/SKILL.md
+│   ├── backend/SKILL.md
+│   ├── backend/auth/SKILL.md
+│   └── frontend/SKILL.md
 ├── agents/
-│   ├── orchestrator/AGENT.md     ← delegate-only orchestrator
+│   ├── orchestrator/AGENT.md
 │   ├── backend-agent/AGENT.md
 │   └── frontend-agent/AGENT.md
-├── commands/                     ← (with --plugin)
-│   ├── review.md
-│   └── deploy.md
-├── plugin.json                   ← (with --plugin)
-├── HOOKS.md                      ← (with --with-hooks)
-├── DISCOVERY_INDEX.md            ← (with --disclosure tiered)
+├── commands/
+├── plugin.json
+├── HOOKS.md
+├── DISCOVERY_INDEX.md
 └── SKILLS_INDEX.md
-
-.opencode/                        ← identical mirror
-.atl/skill-registry.md            ← agent-teams-lite registry
-.cursor/rules/*.mdc               ← (with --targets cursor)
-AGENTS.md                         ← (with --targets codex)
-GEMINI.md                         ← (with --targets gemini)
-.github/copilot-instructions.md   ← (with --targets copilot)
 ```
 
----
+### Things worth knowing
 
-## `export` command
+- `--targets all` is the fastest way to produce a full multi-agent output set.
+- `--disclosure tiered` adds progressive disclosure markers and index files.
+- `--score --scan --compress` lets you treat skill generation like a pipeline instead of a one-shot dump.
 
-Flatten a repo into a single LLM-optimized file. **No API key needed.**
+## `export` Command
 
-```
+Flatten a repo into one LLM-friendly file. No API key required.
+
+```text
 repoforge export [OPTIONS]
 
   -w, --working-dir DIR     Repo to analyze  [default: .]
-  -o, --output FILE         Output file (default: stdout)
-  --max-tokens INT          Token budget limit (prioritizes important files)
-  --no-contents             Skip file contents — tree + definitions only
-  --format FORMAT           Output format  [default: markdown]
-                            markdown|xml (CXML-style)
-  -q, --quiet               Suppress progress output
+  -o, --output FILE         Output file, or stdout if omitted
+  --max-tokens INT          Token budget cap
+  --no-contents             Tree plus definitions only
+  --format FORMAT           markdown|xml
+  --compress                API-surface-focused export
+  -q, --quiet
 ```
 
 ```bash
-repoforge export -w .                         # print to stdout
-repoforge export -w . -o context.md           # save to file
-repoforge export -w . --max-tokens 100000     # limit output size
-repoforge export -w . --no-contents           # tree + definitions only
-repoforge export -w . --format xml            # XML output (CXML-style)
+repoforge export -w .
+repoforge export -w . -o context.md
+repoforge export -w . --max-tokens 100000
+repoforge export -w . --no-contents
+repoforge export -w . --format xml
+repoforge export -w . --compress
 ```
 
----
+## `score` Command
 
-## `score` command
+Scores generated skills across 7 dimensions: completeness, clarity, specificity, examples, format, safety, and agent readiness. No API key required.
 
-Score quality of generated SKILL.md files across 7 dimensions. **No API key needed.**
-
-Dimensions: completeness, clarity, specificity, examples, format, safety, agent readiness.
-
-```
+```text
 repoforge score [OPTIONS]
 
-  -w, --working-dir DIR     Repo to analyze  [default: .]
-  -d, --skills-dir DIR      Skills directory  [default: .claude/skills/]
-  --format FORMAT           Output format  [default: table]
-                            table|json|markdown
-  --min-score FLOAT         Minimum score (0.0-1.0). Exit 1 if below.
-  -q, --quiet               Suppress progress output
+  -w, --working-dir DIR     Repo root  [default: .]
+  -d, --skills-dir DIR      Skills directory override
+  --format FORMAT           table|json|markdown
+  --min-score FLOAT         Exit 1 if a skill falls below threshold
+  -q, --quiet
 ```
 
 ```bash
-repoforge score -w .                     # score with table output
-repoforge score -w . --format json       # JSON output
-repoforge score -w . --min-score 0.7     # fail if any skill < 70%
+repoforge score -w .
+repoforge score -w . --format json
+repoforge score -w . --min-score 0.7
+repoforge score -d /path/to/skills
 ```
 
----
+## `scan` Command
 
-## `scan` command
+Security scanner for generated markdown. No API key required. It ships 37 rules across 5 categories:
 
-Security scanner with 37 rules in 5 categories. **No API key needed.**
+- prompt injection
+- hardcoded secrets
+- PII exposure
+- destructive commands
+- unsafe code patterns
 
-Categories: prompt injection, hardcoded secrets, PII exposure, destructive commands, unsafe code patterns.
+It is context-aware: anti-pattern examples are downgraded instead of treated the same as production secrets.
 
-Context-aware: patterns inside Anti-Patterns sections are downgraded to INFO (not false positives).
-
-```
+```text
 repoforge scan [OPTIONS]
 
   -w, --workspace DIR       Repo root  [default: .]
-  --target-dir DIR          Specific directory to scan (default: auto-detect)
-  --format FORMAT           Output format  [default: table]
-                            table|json|markdown
-  --allowlist IDS           Comma-separated rule IDs to skip (e.g. SEC-020,SEC-022)
-  --fail-on SEVERITY        Exit 1 if findings at or above this level
-                            critical|high|medium|low
-  -q, --quiet               Suppress progress output
+  --target-dir DIR          Specific directory override
+  --format FORMAT           table|json|markdown
+  --allowlist IDS           Comma-separated rule IDs
+  --fail-on SEVERITY        critical|high|medium|low
+  -q, --quiet
 ```
 
 ```bash
-repoforge scan -w .                              # scan with table output
-repoforge scan -w . --fail-on critical           # CI gate: fail on critical
-repoforge scan -w . --allowlist SEC-020,SEC-022  # skip specific rules
+repoforge scan -w .
+repoforge scan -w . --format json
+repoforge scan -w . --fail-on critical
+repoforge scan -w . --allowlist SEC-020,SEC-022
+repoforge scan --target-dir ./my-skills
 ```
 
----
+## `compress` Command
 
-## `compress` command
+Deterministic markdown compression for lower token cost. No API key required.
 
-Token-optimize generated .md files with deterministic multi-pass compression (50-75% reduction). **No API key needed.**
+Compression passes include whitespace normalization, filler removal, table compaction, code-block cleanup, bullet consolidation, and optional aggressive abbreviation.
 
-Passes: whitespace normalization, filler phrase removal, table compaction, code block cleanup, bullet consolidation, abbreviations (aggressive only).
-
-```
+```text
 repoforge compress [OPTIONS]
 
   -w, --workspace DIR       Repo root  [default: .]
-  --target-dir DIR          Directory to compress  [default: .claude/skills/]
-  --aggressive              Use abbreviations (function→fn, configuration→config)
-  --dry-run                 Show compression stats without modifying files
-  -q, --quiet               Suppress progress output
+  --target-dir DIR          Directory override
+  --aggressive              Stronger abbreviation mode
+  --dry-run                 Show compression stats only
+  -q, --quiet
 ```
 
 ```bash
-repoforge compress -w .                       # compress .claude/skills/
-repoforge compress -w . --aggressive          # also abbreviate words
-repoforge compress -w . --dry-run             # show stats only
+repoforge compress -w .
+repoforge compress -w . --aggressive
+repoforge compress -w . --dry-run
+repoforge compress --target-dir ./my-skills
 ```
 
----
+## `graph` Command
 
-## `graph` command
+Builds a code knowledge graph from repository structure. No API key required.
 
-Build a code knowledge graph from scanner data. **No API key needed.**
+It supports file-level dependency graphs, symbol-level call graphs, structured graph queries, community detection, and blast radius analysis.
 
-Uses import/export name matching — no tree-sitter needed.
-
-```
+```text
 repoforge graph [OPTIONS]
 
   -w, --workspace DIR       Repo root  [default: .]
-  -o, --output FILE         Output file (default: stdout)
-  --format FORMAT           Output format  [default: summary]
-                            mermaid|json|dot|summary
-  --blast-radius MODULE     Show blast radius for a specific module
-  -q, --quiet               Suppress progress output
+  -o, --output FILE         Output file or stdout
+  --format FORMAT           mermaid|json|dot|summary
+  --type TYPE               deps|calls
+  --blast-radius MODULE     Show impact of a module change
+  --v2                      Use extractor-based graph builder
+  --depth INT               BFS depth for v2 blast radius
+  --max-files INT           Max files in blast-radius result
+  --include-tests / --no-include-tests
+  --query MODE              callers|callees|imports
+  --symbol TEXT             Symbol for callers or callees query
+  --file PATH               File path for imports query
+  --communities             Detect related module clusters
+  --incremental             Use file-hash graph caching
+  -q, --quiet
 ```
 
 ```bash
-repoforge graph -w .                              # summary to stdout
-repoforge graph -w . --format mermaid             # Mermaid diagram
-repoforge graph -w . --format json -o graph.json  # D3/Cytoscape-compatible
-repoforge graph -w . --blast-radius src/auth.py   # who breaks if auth changes?
+repoforge graph -w .
+repoforge graph -w . --format mermaid
+repoforge graph -w . --format json -o graph.json
+repoforge graph -w . --format dot -o graph.dot
+repoforge graph -w . --blast-radius repoforge/cli.py
+repoforge graph -w . --type calls
+repoforge graph --query callers --symbol build_graph
+repoforge graph --query imports --file repoforge/cli.py
+repoforge graph -w . --communities --format summary
 ```
 
----
+## `diagram` Command
 
-## `diagram` command
+Generates architecture diagrams from code or external specs. No API key required.
 
-Generate Mermaid architecture diagrams from code analysis. **No API key needed.**
-
-Three diagram types: module dependency flowchart, directory structure hierarchy, and entry point call flow sequence diagrams.
-
-```
+```text
 repoforge diagram [OPTIONS]
 
   -w, --workspace DIR       Repo root  [default: .]
-  -o, --output FILE         Output file (default: stdout)
-  --type TYPE               Diagram type  [default: all]
-                            dependency|directory|callflow|all
-  --max-nodes INT           Max nodes in dependency diagram  [default: 40]
-  --max-depth INT           Max depth for directory/call flow  [default: 3]
-  --entry FILE              Entry point for call flow (auto-detected if not set)
-  -q, --quiet               Suppress progress output
+  -o, --output FILE         Output file or stdout
+  --type TYPE               dependency|directory|callflow|erd|k8s|openapi|svg|all
+  --max-nodes INT           Dependency diagram node cap
+  --max-depth INT           Directory or call-flow depth
+  --entry FILE              Entry point for call-flow diagrams
+  --input FILE              Required for erd, k8s, and openapi
+  -q, --quiet
 ```
 
 ```bash
-repoforge diagram -w .                                   # all diagrams to stdout
-repoforge diagram -w . --type dependency                 # dependency graph only
-repoforge diagram -w . --type callflow --entry src/main.py  # call flow from entry
-repoforge diagram -w . -o diagrams.md                    # save to file
+repoforge diagram -w .
+repoforge diagram -w . --type dependency
+repoforge diagram -w . --type callflow --entry src/main.py
+repoforge diagram -w . --type erd --input schema.sql
+repoforge diagram -w . --type k8s --input k8s/deployment.yaml
+repoforge diagram -w . --type openapi --input openapi.json
+repoforge diagram -w . --type svg -o architecture.svg
+repoforge diagram -w . -o diagrams.md
 ```
 
----
+There is also a `repoforge diagrams` command that writes a combined markdown file with multiple Mermaid blocks.
 
-## Monorepo support
+## Code Analysis Commands
 
-Auto-detects layers from directory structure. Docs are generated hierarchically:
+Beyond docs and skills, RepoForge exposes a set of deterministic code-analysis commands (no API key required unless noted). These power refactor planning, review scoping, and codebase archaeology.
 
+```bash
+# Multi-layer analysis: AST + call graph + CFG + DFG + PDG (needs [intelligence] extra)
+repoforge analyze -w .
+
+# Transitive blast radius of a change
+repoforge blast-radius -w . --files repoforge/cli.py
+
+# Which tests to run for a change
+repoforge change-impact -w .
+
+# Files that always change together
+repoforge co-change -w .
+
+# Ownership and bus factor
+repoforge ownership -w .
+
+# Potentially dead code via graph analysis
+repoforge dead-code -w .
+
+# Program slice for a specific line
+repoforge slice -w . --file repoforge/cli.py --line 100
+
+# Decision registry from git history and inline markers
+repoforge decisions -w .
+
+# Graph-aware context pruning for LLM review
+repoforge context-prune -w . --files repoforge/cli.py
+
+# Semantic code search by behavior
+repoforge search -w . "where do we validate the API key"
+
+# Run every analysis check in one shot
+repoforge audit -w .
 ```
+
+For cross-repo work, `repoforge registry` maintains a registry of repositories and lets you `add`, `remove`, `list`, `build`, and `search` graphs across all of them.
+
+## MCP Server
+
+RepoForge ships an MCP (Model Context Protocol) server that exposes its deterministic analysis to MCP-capable agents. It provides these tools:
+
+- `repoforge_generate_docs`
+- `repoforge_score`
+- `repoforge_graph`
+- `repoforge_scan`
+- `repoforge_drift`
+
+plus context resources (generated documentation, `LLMs.txt`, the code knowledge graph, quality scores, and the public API surface).
+
+Add it to your MCP client config (for example `~/.claude/settings.json`):
+
+```json
+{
+  "mcpServers": {
+    "repoforge": {
+      "command": "uv",
+      "args": ["--directory", "/path/to/repoforge", "run", "python", "-m", "repoforge.mcp_server"]
+    }
+  }
+}
+```
+
+## GitHub Pages Deployment
+
+RepoForge ships a docs workflow with safe deploy modes. The default is generate-only. That is the correct default because clobbering an existing Pages site would be amateur-hour behavior.
+
+### Deploy modes
+
+| Mode | Behavior |
+|---|---|
+| `none` | Generate docs only, do not publish |
+| `auto` | If no live site exists, deploy to Pages root; otherwise deploy to a subpath |
+| `main` | Force deploy to Pages root |
+| `subpath` | Publish under `/<prefix>/` on `gh-pages` while preserving existing files |
+
+### Step-by-step: safe GitHub Pages setup
+
+1. Copy or reuse `.github/workflows/docs.yml` in your repository.
+2. Create a GitHub PAT with `models:read` scope.
+3. Save that PAT as the repository secret `GH_MODELS_TOKEN`.
+4. Decide whether you want generate-only, root deploy, or subpath deploy.
+5. If you want publishing, set repository variables:
+   - `REPOFORGE_DOCS_DEPLOY_MODE=auto` or `main` or `subpath`
+   - `REPOFORGE_DOCS_CONFIRM_DEPLOY=true`
+   - optional `REPOFORGE_DOCS_SUBPATH_PREFIX=docs`
+6. Check GitHub Pages settings:
+   - for `main`: Pages should use GitHub Actions
+   - for `subpath`: Pages should deploy from `gh-pages` branch at `/ (root)`
+7. Push to `main`, or trigger `workflow_dispatch` with `deploy_mode`, `confirm_deploy`, and `subpath_prefix`.
+8. Open the published URL reported by the workflow summary.
+
+### Required Pages settings by mode
+
+| `deploy_mode` | Deployment mechanism | Required Pages setting |
+|---|---|---|
+| `none` | Generate only | Any |
+| `main` | `actions/deploy-pages@v4` | GitHub Actions |
+| `subpath` | `peaceiris/actions-gh-pages@v4` with `keep_files` | Deploy from branch `gh-pages` |
+| `auto` | Chooses `main` or `subpath` | Must match actual target |
+
+### Example: add docs without breaking an existing Pages site
+
+```bash
+gh variable set REPOFORGE_DOCS_DEPLOY_MODE --body "auto" --repo youruser/yourrepo
+gh variable set REPOFORGE_DOCS_CONFIRM_DEPLOY --body "true" --repo youruser/yourrepo
+gh variable set REPOFORGE_DOCS_SUBPATH_PREFIX --body "docs" --repo youruser/yourrepo
+gh secret set GH_MODELS_TOKEN --repo youruser/yourrepo
+```
+
+If your repo already serves `https://youruser.github.io/yourrepo/`, auto mode will prefer a preserved subpath deploy when it detects an existing live site.
+
+### Using the reusable GitHub Action
+
+RepoForge also ships a composite action (`action.yml`). When you reference it from another workflow, pin a released tag instead of `@main` so downstream workflows stay reproducible:
+
+```yaml
+uses: JNZader/repoforge@v0.6.0  # pin a released tag — see the Releases page
+```
+
+### Manual Pages flow
+
+Still supported if you do not want the workflow:
+
+```bash
+repoforge docs -w . -o docs --lang English
+git add docs
+git commit -m "docs: generate documentation"
+git push
+```
+
+Then configure GitHub Pages to serve `/docs` from `main` if that is your chosen model.
+
+## Monorepo Support
+
+RepoForge auto-detects layers and generates hierarchical docs.
+
+```text
 docs/
-├── index.md              ← monorepo home + layer links
-├── 01-overview.md        ← global tech stack, all layers
-├── 03-architecture.md    ← how layers interact + Mermaid diagram
-├── 06b-service-map.md    ← inter-service contracts
-├── frontend/             ← classified as frontend_app
+├── index.md
+├── 01-overview.md
+├── 03-architecture.md
+├── 06b-service-map.md
+├── frontend/
 │   ├── index.md
 │   ├── 05-components.md
 │   └── 06-state.md
-└── backend/              ← classified as web_service
+└── backend/
     ├── index.md
     ├── 05-data-models.md
     └── 06-api-reference.md
 ```
 
----
+That means you get a global architecture view plus layer-specific chapters instead of one useless, flattened wall of prose.
 
-## `repoforge.yaml` — per-repo config
+## `repoforge.yaml` - Per-Repo Config
+
+Create `repoforge.yaml` in the repo root to override defaults.
 
 ```yaml
-# repoforge.yaml (place in repo root)
-
-# Override project name (default: from package.json / pyproject.toml)
+# Core identity
 project_name: "My App"
-
-# Force project type (default: auto-detected)
-# web_service | frontend_app | cli_tool | library_sdk | data_science
-# mobile_app | desktop_app | infra_devops | monorepo | generic
 project_type: web_service
+language: English
 
-# Override layer detection (default: auto from directory names)
+# Model selection
+model: github/gpt-4o-mini
+
+# If you want per-tier routing, set model: auto and configure tiers
+models:
+  heavy: claude-haiku-3-5
+  standard: github/gpt-4o-mini
+  light: github/gpt-4o-mini
+
+# Generation depth
+complexity: auto
+disclosure: tiered
+
+# Multi-tool output
+targets: [claude, opencode, cursor, codex]
+generate_hooks: true
+generate_plugin: true
+
+# Monorepo layer overrides
 layers:
   frontend: apps/web
   backend: apps/api
   shared: packages/shared
 
-# Default language for docs
-language: Spanish
+# Docs generation defaults
+parallel:
+  max_workers: 4
 
-# Default model
-model: github/gpt-4o-mini
+# Optional chapter-level customization
+pages:
+  - file: "03-architecture.md"
+    sections:
+      - type: intro
+        order: 1
+        content: "This project follows a layered architecture."
+      - type: diagram
+        enabled: true
+        order: 2
+      - type: custom
+        title: "Deployment Notes"
+        order: 3
+        content: "Production deploys through GitHub Actions."
 
-# Override auto-detected complexity (affects generation depth)
-# auto | small | medium | large
-complexity: auto
-
-# Output targets for multi-tool support
-# Default: [claude, opencode]
-# Valid: claude, opencode, cursor, codex, gemini, copilot
-targets: [claude, opencode]
-
-# Generate HOOKS.md with recommended Claude Code hooks
-generate_hooks: false
-
-# Generate plugin.json + commands/ hierarchy
-generate_plugin: false
+# Optional project-type template overrides
+templates:
+  - name: "custom-web-service"
+    project_type: web_service
+    chapters:
+      - file: "08-ops.md"
+        title: "Operations"
+        description: "Runbooks, observability, and deployment notes"
+        prompt_key: dev_guide
+        order: 80
 ```
 
----
+### Config behavior notes
+
+- CLI flags beat config values.
+- If `model` is not `auto`, the same model is used for heavy, standard, and light tiers.
+- If `model: auto`, RepoForge reads `models.heavy`, `models.standard`, and `models.light`.
+- `targets` can be a YAML list and maps directly to multi-tool output.
+- `pages` customizes sections within generated chapters.
+- `templates` lets you override or extend chapter templates for project types.
 
 ## Python API
 
+RepoForge is not just a CLI wrapper. You can call the underlying library directly.
+
 ```python
 from repoforge import (
-    # Skills + agents
     generate_artifacts,
-    # Documentation
     generate_docs,
-    # LLM export
     export_llm_view,
-    # Quality scoring
-    SkillScorer, SkillScore,
-    # Multi-tool adapters
-    adapt_for_cursor, adapt_for_codex, adapt_for_gemini, adapt_for_copilot,
-    resolve_targets, ALL_TARGETS,
-    # Progressive disclosure
-    extract_tier, build_discovery_index, estimate_tokens,
-    # Token compression
-    SkillCompressor, CompressionResult, compress_file, compress_directory,
-    # Security scanning
-    SecurityScanner, ScanResult, Finding, Severity, scan_generated_output,
-    # Plugin hierarchy
-    Command, PluginManifest, build_commands, build_plugin_manifest,
-    manifest_to_json, manifest_to_markdown, write_plugin,
-    # Code graph
-    CodeGraph, Node, Edge, build_graph, build_graph_from_workspace,
-    build_graph_v2, get_blast_radius_v2, BlastRadiusResult,
-    # Mermaid diagrams
-    generate_dependency_diagram, generate_directory_diagram,
-    generate_call_flow_diagram, generate_all_diagrams,
-    # Incremental docs
-    Manifest, ChapterEntry, load_manifest, save_manifest,
-    get_changed_files, build_chapter_deps, get_stale_chapters,
-    # Dependency health
-    DependencyHealthReport, analyze_dependency_health,
-    DuplicateDep, LicenseConflict, OutdatedDep,
-    # Coverage unification
-    CoverageReport, CoverageFile, auto_detect_and_parse,
-    render_coverage_markdown, parse_cobertura, parse_lcov,
-    parse_coverage_py_json, parse_jacoco,
+    SkillScorer,
+    SkillCompressor,
+    SecurityScanner,
+    scan_generated_output,
+    build_graph,
+    build_graph_from_workspace,
+    build_graph_v2,
+    get_blast_radius_v2,
+    generate_dependency_diagram,
+    generate_directory_diagram,
+    generate_call_flow_diagram,
+    generate_all_diagrams,
+    Manifest,
+    ChapterEntry,
+    load_manifest,
+    save_manifest,
+    get_changed_files,
+    build_chapter_deps,
+    get_stale_chapters,
+    DependencyHealthReport,
+    analyze_dependency_health,
+    CoverageReport,
+    auto_detect_and_parse,
+    render_coverage_markdown,
+    adapt_for_cursor,
+    adapt_for_codex,
+    adapt_for_gemini,
+    adapt_for_copilot,
+    resolve_targets,
+    ALL_TARGETS,
 )
 
-# Skills + agents
+# Generate skills and agents
 generate_artifacts(
     working_dir="/path/to/repo",
     output_dir=".claude",
     model="github/gpt-4o-mini",
-    also_opencode=True,
+    targets="claude,cursor,codex",
     complexity="auto",
     with_hooks=True,
     with_plugin=True,
-    targets="claude,cursor,codex",
     disclosure="tiered",
     compress=True,
 )
 
-# Documentation
+# Generate documentation
 generate_docs(
     working_dir="/path/to/repo",
     output_dir="docs",
     model="claude-haiku-3-5",
-    language="Spanish",
+    language="English",
     complexity="auto",
+    incremental=True,
+    embed_diagrams=True,
 )
 
-# LLM export (no API key needed)
-result = export_llm_view(
+# Export repo context
+context = export_llm_view(
     workspace="/path/to/repo",
     output_path="context.md",
     max_tokens=100000,
     fmt="markdown",
 )
 
-# Quality scoring (no API key needed)
+# Score skills
 scorer = SkillScorer()
 scores = scorer.score_directory(".claude/skills")
 print(scorer.report(scores, fmt="table"))
 
-# Security scanning (no API key needed)
+# Scan generated output
 scan_result = scan_generated_output("/path/to/repo")
 scanner = SecurityScanner()
 print(scanner.report(scan_result, fmt="table"))
 
-# Code graph (no API key needed)
+# Graph and blast radius
 graph = build_graph_from_workspace("/path/to/repo")
 print(graph.to_mermaid())
-print(graph.summary())
-affected = graph.get_blast_radius("src/auth.py")
+graph_v2 = build_graph_v2("/path/to/repo")
+blast = get_blast_radius_v2(graph_v2, "repoforge/cli.py")
 
-# Mermaid diagrams (no API key needed)
-from repoforge import generate_dependency_diagram, generate_all_diagrams
-graph = build_graph_v2("/path/to/repo")
-print(generate_dependency_diagram(graph, max_nodes=40))
-print(generate_all_diagrams("/path/to/repo", graph, file_list))
+# Diagrams
+print(generate_dependency_diagram(graph_v2, max_nodes=40))
 
-# Incremental docs
-generate_docs(
-    working_dir="/path/to/repo",
-    output_dir="docs",
-    model="claude-haiku-3-5",
-    incremental=True,  # only regenerate stale chapters
-)
+# Incremental docs helpers
+manifest = load_manifest("docs")
+changed = get_changed_files("/path/to/repo")
 
-# Dependency health (no API key needed)
-report = analyze_dependency_health("/path/to/repo")
-print(report.to_markdown())
-print(f"Health: {report.health_score}")  # good, moderate, or poor
-
-# Coverage report unification (no API key needed)
+# Dependency health and coverage
+health = analyze_dependency_health("/path/to/repo")
 reports = auto_detect_and_parse("/path/to/repo")
 markdown = render_coverage_markdown(reports)
 ```
 
----
+### API areas worth knowing
 
-## How it works
+- docs generation: `generate_docs`
+- skills generation: `generate_artifacts`
+- repo export: `export_llm_view`
+- scanning and scoring: `SecurityScanner`, `SkillScorer`
+- graph analysis: `build_graph_from_workspace`, `build_graph_v2`, `get_blast_radius_v2`
+- diagrams: `generate_dependency_diagram`, `generate_all_diagrams`
+- incremental docs: manifest and stale-chapter helpers
+- adapters: `adapt_for_cursor`, `adapt_for_codex`, `adapt_for_gemini`, `adapt_for_copilot`
 
+## How It Works
+
+```text
+1. SCAN     (deterministic)  Detect stack, layers, files, symbols, and structure
+2. PLAN     (deterministic)  Choose chapters, rank modules, route by complexity
+3. GENERATE (LLM)            Produce prose for docs or skills
+4. ADAPT    (deterministic)  Convert output to Cursor, Codex, Gemini, Copilot, OpenCode formats
+5. ENRICH   (deterministic)  Add scans, compression, plugin manifests, diagrams, dependency health, coverage
+6. WRITE                     Emit Docsify docs, skills, agents, exports, and reports
 ```
-1. SCAN     (free, no LLM) — detect layers, extract exports/imports, detect stack, extract symbols
-2. PLAN     (free, no LLM) — select chapters by project type, rank modules, route by complexity
-                             with --incremental: skip unchanged chapters via git diff + manifest
-3. GENERATE (LLM calls)    — one call per chapter or skill (only stale chapters in incremental mode)
-4. ADAPT    (free, no LLM) — convert to target formats (Cursor, Codex, Gemini, Copilot)
-5. ENRICH   (free, no LLM) — hooks, plugin manifest, disclosure index, compression, security scan,
-                             dependency health report, coverage report, Mermaid diagrams
-6. WRITE                   — Docsify-ready docs/ or .claude/ skills + multi-tool output
-```
 
-The LLM only generates **text**. All structural analysis, scoring, compression, scanning, graph building, symbol extraction, diagram generation, dependency health, and coverage parsing is deterministic.
+Important distinction: the LLM generates text, but the structural analysis, graphing, scoring, scanning, coverage parsing, and diagram generation are deterministic.
 
----
+## Cost
 
-## Cost estimate
+The only paid step is LLM text generation (`docs`, `skills`, `skills-from-docs`, `index`). Every other command is free to run.
 
-| Model | ~cost for medium repo |
+| Model | Cost |
 |---|---|
-| GitHub Models (Copilot) | **free** |
-| Groq | **free** (rate-limited) |
-| Ollama (local) | **free** |
-| Claude Haiku 3.5 | ~$0.05 |
-| GPT-4o-mini | ~$0.04 |
-| Claude Sonnet | ~$0.50 |
+| GitHub Models | Free with the right token setup |
+| Groq | Free tier, rate-limited |
+| Ollama | Free local runtime |
+| Claude Haiku 3.5 / GPT-4o-mini | Low per-run cost |
+| Claude Sonnet / larger models | Higher per-run cost |
 
----
+Actual cost depends on repo size, chapter count, and model pricing. Use `--dry-run` to see the generation plan before spending tokens.
 
-## Supported stacks
+## Supported Stacks
 
-Language-agnostic — tested with Python, TypeScript, JavaScript, Go, Java, Kotlin, Rust, Ruby, PHP, and any monorepo combination.
+Language-agnostic scanning, with deep AST-level analysis (the `analyze`/`slice` pipeline) across 13 languages: Python, TypeScript, JavaScript, Go, Java, Kotlin, Rust, Ruby, PHP, C, C++, C#, and Swift.
 
----
+The graph extractors (`graph --v2`, blast radius) cover a core subset — Python, TypeScript, JavaScript, Go, Java, and Rust — plus mixed monorepos.
 
 ## License
 
 MIT
 
----
+## Inspirations
 
-## v0.4.0 Inspirations
-
-- [CodeViewX](https://github.com/dean2021/codeviewx) — original export concept
-- [Gentleman-Skills](https://github.com/Gentleman-Programming/Gentleman-Skills) — skill format spec
-- [agent-teams-lite](https://github.com/Gentleman-Programming/agent-teams-lite) — agent orchestration pattern
-- [repomix](https://github.com/yamadashy/repomix) / [rendergit](https://github.com/nicobytes/rendergit) — LLM export and XML format inspiration
-- [aider](https://github.com/Aider-AI/aider) — RepoMap-based code graph approach
-- [semgrep](https://github.com/semgrep/semgrep) — security scanning rule categories
+- [CodeViewX](https://github.com/dean2021/codeviewx)
+- [Gentleman-Skills](https://github.com/Gentleman-Programming/Gentleman-Skills)
+- [agent-teams-lite](https://github.com/Gentleman-Programming/agent-teams-lite)
+- [repomix](https://github.com/yamadashy/repomix)
+- [rendergit](https://github.com/nicobytes/rendergit)
+- [aider](https://github.com/Aider-AI/aider)
+- [semgrep](https://github.com/semgrep/semgrep)
