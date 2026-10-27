@@ -1,92 +1,83 @@
 ---
-name: add-main-endpoint
+name: add-main-endpoints
 description: >
-  This skill covers adding main endpoints to the FastAPI application.
-  Trigger: When setting up the main entry point for the application.
+  Middleware and health endpoints for RepoForge Web application.
+  Trigger: when initializing or extending the FastAPI main application.
 license: Apache-2.0
 metadata:
   author: repoforge
   version: "1.0"
-  complexity: low
-  token_estimate: 350
-  dependencies: []
-  related_skills: []
-  load_priority: high
+complexity: low
+token_estimate: 450
+dependencies: []
+related_skills: [add-repo-endpoint, add-user-model]
+load_priority: high
 ---
 
 <!-- L1:START -->
-# add-main-endpoint
+# add-main-endpoints
 
-This skill covers adding main endpoints to the FastAPI application.
+One sentence: Adds middleware and health check endpoints to the FastAPI app.
 
-**Trigger**: When setting up the main entry point for the application.
+**Trigger**: when setting up the RepoForge Web application main entry point.
 <!-- L1:END -->
 
 <!-- L2:START -->
 ## Quick Reference
 
-| Task               | Pattern                     |
-|--------------------|-----------------------------|
-| Add health check   | `health`                    |
-| Add detailed health | `health_detailed`           |
-
-## Critical Patterns (Summary)
-- **health**: Implements a basic health check endpoint.
-- **health_detailed**: Implements a detailed health check endpoint.
+| Task | Pattern |
+|------|---------|
+| Add middleware | `add-middleware-pattern` |
+| Health check | `health-endpoint-pattern` |
 <!-- L2:END -->
 
 <!-- L3:START -->
 ## Critical Patterns (Detailed)
 
-### health
+### Pattern: correlation_id_middleware
 
-Implements a basic health check endpoint to verify the service is running.
-
-```python
-from fastapi import FastAPI
-
-app = FastAPI()
-
-@app.get("/health")
-async def health():
-    return {"status": "healthy"}
-```
-
-### health_detailed
-
-Implements a detailed health check endpoint providing more information about the service status.
+Injects a unique correlation ID into each request context for distributed tracing.
 
 ```python
-from fastapi import FastAPI
-
-app = FastAPI()
-
-@app.get("/health/detailed")
-async def health_detailed():
-    return {"status": "healthy", "details": "All systems operational"}
+@app.middleware("http")
+async def correlation_id_middleware(request: Request, call_next):
+    import uuid
+    request.state.correlation_id = str(uuid.uuid4())
+    response = await call_next(request)
+    response.headers["X-Correlation-ID"] = request.state.correlation_id
+    return response
 ```
 
+### Pattern: health endpoint
+
+Provides basic and detailed health check endpoints for monitoring and load balancer checks.
+
+```python
+async def health() -> dict:
+    return {"status": "ok"}
+
+async def health_detailed() -> dict:
+    return {"status": "ok", "database": "connected"}
+```
 ## When to Use
 
-- When you need to expose a health check endpoint for monitoring.
-- When you want to provide detailed service status for diagnostics.
+- Adding request tracing and monitoring to the RepoForge Web app
+- Configuring health checks for Docker container orchestration
 
 ## Commands
 
 ```bash
-docker run -d -p 8000:8000 your-image-name
+docker compose up -d repoforge
 ```
 
 ## Anti-Patterns
 
-### Don't: Expose sensitive data in health checks
+### Don't: Skip middleware setup
 
-Exposing sensitive information can lead to security vulnerabilities.
+Omitting `correlation_id_middleware` or `security_headers_middleware` leaves the application vulnerable to request forgery and removes tracing capability.
 
 ```python
-# BAD
-@app.get("/health/detailed")
-async def health_detailed():
-    return {"status": "healthy", "db_status": "connected", "secret_key": "12345"}
+# BAD: Missing middleware registration
+# app.add_middleware(...)  # not called
 ```
 <!-- L3:END -->

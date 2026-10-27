@@ -87,7 +87,7 @@ pip install repoforge-ai
 Algunos comandos necesitan dependencias extra. Instalá solo lo que uses:
 
 ```bash
-pip install "repoforge-ai[intelligence]"  # análisis AST multi-lenguaje (tree-sitter) para `analyze`, `slice`
+pip install "repoforge-ai[intelligence]"  # firmas tree-sitter en la API surface de docs; no lo usan `analyze` ni `slice`
 pip install "repoforge-ai[search]"        # índice de búsqueda semántica (faiss) para `index`/`query`
 pip install "repoforge-ai[pdf]"           # ingesta de PDF para `skills-from-docs`
 pip install "repoforge-ai[youtube]"       # ingesta de transcripciones de YouTube para `skills-from-docs`
@@ -110,8 +110,7 @@ scoop install ripgrep
 |---|---|
 | `repoforge docs` | Genera documentación técnica lista para Docsify |
 | `repoforge skills` | Genera skills y agentes para herramientas de coding |
-| `repoforge skills-from-docs` | Genera `SKILL.md` desde docs externas (URL, repo de GitHub, directorio local, PDF, YouTube, notebook) |
-| `repoforge index` | Construye un índice de búsqueda semántica a partir de las entidades del código |
+| `repoforge index` | Construye un índice de búsqueda semántica (llama a una API de embeddings) |
 
 ### Comandos determinísticos (sin API key)
 
@@ -126,7 +125,8 @@ scoop install ripgrep
 | `repoforge check` | Valida referencias a código en las docs generadas |
 | `repoforge diff` | Diff semántico a nivel de entidad entre dos refs de git |
 | `repoforge audit` | Corre todos los chequeos de análisis de una sola vez |
-| `repoforge analyze` | Análisis multicapa: AST + grafo de llamadas + CFG + DFG + PDG |
+| `repoforge skills-from-docs` | Rellena una plantilla de `SKILL.md` desde docs externas (URL, repo de GitHub, directorio local, PDF, YouTube, notebook). No llama a un LLM |
+| `repoforge analyze` | Capas por regex: símbolos, llamadas, CFG, DFG, PDG. No necesita `[intelligence]` |
 | `repoforge search` | Búsqueda semántica de código por comportamiento |
 | `repoforge query` | Busca en un índice ya construido |
 | `repoforge blast-radius` | Radio de impacto transitivo de un cambio |
@@ -134,7 +134,7 @@ scoop install ripgrep
 | `repoforge co-change` | Detecta archivos que siempre cambian juntos |
 | `repoforge ownership` | Calcula ownership de archivos/módulos y bus factor |
 | `repoforge dead-code` | Detecta código potencialmente muerto vía análisis de grafo |
-| `repoforge slice` | Program slice para una línea específica |
+| `repoforge slice` | Program slice de una línea, con el mismo análisis por regex. No necesita `[intelligence]` |
 | `repoforge decisions` | Registro de decisiones desde el historial de git y marcadores inline |
 | `repoforge context-prune` | Poda de contexto consciente del grafo para review con LLM |
 | `repoforge prompts` | Genera prompts de análisis reutilizables desde un escaneo |
@@ -150,6 +150,7 @@ Corré `repoforge <command> --help` para ver la lista completa de opciones de cu
 - `-o`, `--output` / `--output-dir`: archivo o directorio de salida
 - `--model`: modelo de LLM
 - `--dry-run`: solo planifica, sin llamadas al LLM
+- `--no-thinking`: manda `enable_thinking=false` para modelos que anteponen un thinking trace
 - `-q`, `--quiet`: salida más silenciosa
 
 ## Configuración del modelo
@@ -158,14 +159,7 @@ RepoForge autodetecta proveedores a partir de variables de entorno, pero la conf
 
 ### GitHub Models
 
-La mejor opción de baja fricción si ya usás el tooling de GitHub.
-
-```bash
-export GITHUB_TOKEN=$(gh auth token)
-repoforge docs -w . --model github/gpt-4o-mini
-```
-
-Para GitHub Actions, el `GITHUB_TOKEN` incorporado no alcanza para GitHub Models. Necesitás un PAT con scope `models:read`, normalmente guardado como `GH_MODELS_TOKEN`.
+Retirado el 2026-07-30. Un modelo `github/...` y `GH_MODELS_TOKEN` no llegan a ninguna API de inferencia. Para el free tier usá Groq, o cualquier proveedor de abajo con su propia key.
 
 ### Groq
 
@@ -197,7 +191,7 @@ repoforge docs -w . --model gpt-4o-mini
 
 ### Notas prácticas sobre modelos
 
-- `github/gpt-4o-mini`: el default más fácil para docs y skills si ya usás GitHub
+- `nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b`: el modelo que usan los workflows de GitHub Actions de este repo. Pasá `--no-thinking`, o el draft arranca con un thinking trace.
 - `claude-haiku-3-5`: barato y normalmente suficiente para generación
 - `ollama/...`: local y gratis, pero la calidad depende mucho del modelo que bajes
 - `groq/...`: rápido y amigable con el free tier, pero los rate limits importan
@@ -564,7 +558,7 @@ También existe un comando `repoforge diagrams` que escribe un archivo markdown 
 Más allá de docs y skills, RepoForge expone un conjunto de comandos de análisis de código determinísticos (sin API key salvo que se indique). Sirven para planificar refactors, delimitar el alcance de un review y hacer arqueología del código.
 
 ```bash
-# Análisis multicapa: AST + grafo de llamadas + CFG + DFG + PDG (necesita el extra [intelligence])
+# Capas por regex: símbolos, llamadas, CFG, DFG, PDG. Sin extra [intelligence].
 repoforge analyze -w .
 
 # Radio de impacto transitivo de un cambio
@@ -602,15 +596,14 @@ Para trabajo cross-repo, `repoforge registry` mantiene un registro de repositori
 
 ## Servidor MCP
 
-RepoForge trae un servidor MCP (Model Context Protocol) que expone su análisis determinístico a agentes compatibles con MCP. Provee estas tools:
+RepoForge trae un servidor MCP (Model Context Protocol) que expone su análisis determinístico a agentes compatibles con MCP. `list_tools` registra estas tools:
 
-- `repoforge_generate_docs`
 - `repoforge_score`
 - `repoforge_graph`
-- `repoforge_scan`
+- `repoforge_changelog`
 - `repoforge_drift`
-
-más recursos de contexto (documentación generada, `LLMs.txt`, el grafo de conocimiento del código, los scores de calidad y la superficie de API pública).
+- `repoforge_analyze`
+- `repoforge_context`
 
 Agregalo a la configuración de tu cliente MCP (por ejemplo `~/.claude/settings.json`):
 
@@ -641,8 +634,8 @@ RepoForge incluye un workflow de docs con modos de deploy seguros. El default es
 ### Paso a paso: setup seguro de GitHub Pages
 
 1. Copiá o reutilizá `.github/workflows/docs.yml` en tu repositorio.
-2. Creá un PAT de GitHub con scope `models:read`.
-3. Guardá ese PAT como el secret de repositorio `GH_MODELS_TOKEN`.
+2. Creá una API key de NVIDIA NIM.
+3. Guardala como el secret de repositorio `NVIDIA_NIM_API_KEY`. El workflow llama a `nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b` con `no-thinking: true`.
 4. Decidí si querés solo-generar, deploy en raíz o deploy en subpath.
 5. Si querés publicar, definí variables de repositorio:
    - `REPOFORGE_DOCS_DEPLOY_MODE=auto` o `main` o `subpath`
@@ -659,7 +652,7 @@ RepoForge incluye un workflow de docs con modos de deploy seguros. El default es
 | `deploy_mode` | Mecanismo de despliegue | Configuración de Pages requerida |
 |---|---|---|
 | `none` | Solo genera | Cualquiera |
-| `main` | `actions/deploy-pages@v4` | GitHub Actions |
+| `main` | `actions/deploy-pages@v5` | GitHub Actions |
 | `subpath` | `peaceiris/actions-gh-pages@v4` con `keep_files` | Deploy desde la rama `gh-pages` |
 | `auto` | Elige `main` o `subpath` | Debe coincidir con el target real |
 
@@ -669,7 +662,7 @@ RepoForge incluye un workflow de docs con modos de deploy seguros. El default es
 gh variable set REPOFORGE_DOCS_DEPLOY_MODE --body "auto" --repo youruser/yourrepo
 gh variable set REPOFORGE_DOCS_CONFIRM_DEPLOY --body "true" --repo youruser/yourrepo
 gh variable set REPOFORGE_DOCS_SUBPATH_PREFIX --body "docs" --repo youruser/yourrepo
-gh secret set GH_MODELS_TOKEN --repo youruser/yourrepo
+gh secret set NVIDIA_NIM_API_KEY --repo youruser/yourrepo
 ```
 
 Si tu repo ya sirve `https://youruser.github.io/yourrepo/`, el modo auto va a preferir un deploy preservado en subpath cuando detecte un sitio en vivo existente.
@@ -679,7 +672,7 @@ Si tu repo ya sirve `https://youruser.github.io/yourrepo/`, el modo auto va a pr
 RepoForge también trae una action compuesta (`action.yml`). Cuando la referencias desde otro workflow, fijá un tag publicado en lugar de `@main` para que los workflows aguas abajo queden reproducibles:
 
 ```yaml
-uses: JNZader/repoforge@v0.6.0  # fijá un tag publicado — mirá la página de Releases
+uses: JNZader/repoforge@v0.7.1  # fijá un tag publicado — mirá la página de Releases
 ```
 
 ### Flujo manual de Pages
@@ -728,13 +721,13 @@ project_type: web_service
 language: English
 
 # Model selection
-model: github/gpt-4o-mini
+model: groq/openai/gpt-oss-120b
 
 # If you want per-tier routing, set model: auto and configure tiers
 models:
   heavy: claude-haiku-3-5
-  standard: github/gpt-4o-mini
-  light: github/gpt-4o-mini
+  standard: groq/openai/gpt-oss-120b
+  light: groq/openai/gpt-oss-120b
 
 # Generation depth
 complexity: auto
@@ -836,7 +829,7 @@ from repoforge import (
 generate_artifacts(
     working_dir="/path/to/repo",
     output_dir=".claude",
-    model="github/gpt-4o-mini",
+    model="groq/openai/gpt-oss-120b",
     targets="claude,cursor,codex",
     complexity="auto",
     with_hooks=True,
@@ -919,11 +912,10 @@ Distinción importante: el LLM genera el texto, pero el análisis estructural, e
 
 ## Costo
 
-El único paso pago es la generación de texto por LLM (`docs`, `skills`, `skills-from-docs`, `index`). Todos los demás comandos son gratis de correr.
+El único paso pago es la generación de texto por LLM (`docs`, `skills`, `index`). `skills-from-docs` rellena una plantilla y no llama a un modelo. Todos los demás comandos son gratis de correr.
 
 | Modelo | Costo |
 |---|---|
-| GitHub Models | Gratis con el setup de token correcto |
 | Groq | Free tier, con rate limit |
 | Ollama | Runtime local gratis |
 | Claude Haiku 3.5 / GPT-4o-mini | Costo bajo por corrida |
@@ -933,7 +925,7 @@ El costo real depende del tamaño del repo, la cantidad de capítulos y el prici
 
 ## Stacks soportados
 
-Escaneo agnóstico del lenguaje, con análisis profundo a nivel de AST (el pipeline `analyze`/`slice`) en 13 lenguajes: Python, TypeScript, JavaScript, Go, Java, Kotlin, Rust, Ruby, PHP, C, C++, C# y Swift.
+El escaneo es agnóstico del lenguaje. `analyze` y `slice` son regex sobre Python, TypeScript, JavaScript, Go, Java y Rust. No usan tree-sitter. El extra `[intelligence]` aporta firmas tree-sitter para la API surface de la documentación.
 
 Los extractores de grafo (`graph --v2`, radio de impacto) cubren un subconjunto central — Python, TypeScript, JavaScript, Go, Java y Rust — más monorepos mixtos.
 

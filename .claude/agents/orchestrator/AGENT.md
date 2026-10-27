@@ -24,10 +24,11 @@ Before handling any task:
 
 ## Routing Table
 
-| Task type               | Delegate to      |
-|------------------------|------------------|
-| Work in `apps/web/`    | `frontend-agent`  |
-| Work in `apps/server/`  | `backend-agent`   |
+| Task type | Delegate to |
+|-----------|-------------|
+| Work in `apps/web/` | `frontend-agent` |
+| Work in `apps/server/` | `backend-agent` |
+| Work in `./` | `build_modules-agent` |
 
 ## Delegation Protocol
 
@@ -46,16 +47,7 @@ Before handling any task:
 
 - `frontend-agent` — handles `apps/web/` (22 modules, TypeScript)
 - `backend-agent` — handles `apps/server/` (37 modules, Python)
-
-## For Complex Features (SDD mode)
-
-When the task is substantial (new feature, refactor, multi-layer change):
-1. Launch EXPLORER sub-agent → codebase analysis
-2. Show summary, get approval
-3. Launch PROPOSER → proposal
-4. Launch SPEC WRITER → spec
-5. Launch IMPLEMENTER (per layer) → code
-6. Launch VERIFIER → validation
+- `build_modules-agent` — handles `./` (208 modules, Python)
 
 ## Constraints
 
@@ -63,3 +55,7 @@ When the task is substantial (new feature, refactor, multi-layer change):
 - NEVER skip the skill-registry read
 - ALWAYS get user approval before multi-file changes
 - ALWAYS report sub-agent results back to user
+
+## Single-Layer Simplification
+
+For single-layer project: delegates all tasks to `frontend-agent`

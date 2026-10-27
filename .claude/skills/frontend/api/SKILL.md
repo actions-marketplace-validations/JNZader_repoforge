@@ -1,25 +1,25 @@
 ---
-name: fetch-api-data
+name: add-api-endpoint
 description: >
-  This skill covers patterns for fetching and managing API data.
-  Trigger: When working with API interactions in the frontend.
+  Centralized API client for the web frontend with React Query integration.
+  Trigger: when fetching or mutating data from the backend API.
 license: Apache-2.0
 metadata:
   author: repoforge
   version: "1.0"
-  complexity: medium
-  token_estimate: 350
-  dependencies: []
-  related_skills: []
-  load_priority: high
+complexity: medium
+token_estimate: 450
+dependencies: []
+related_skills: []
+load_priority: high
 ---
 
 <!-- L1:START -->
-# fetch-api-data
+# add-api-endpoint
 
-This skill covers patterns for fetching and managing API data.
+One sentence: Centralized API client for the web frontend with React Query integration.
 
-**Trigger**: When working with API interactions in the frontend.
+Trigger: when fetching or mutating data from the backend API.
 <!-- L1:END -->
 
 <!-- L2:START -->
@@ -27,73 +27,66 @@ This skill covers patterns for fetching and managing API data.
 
 | Task | Pattern |
 |------|---------|
-| Fetch API data | `fetchApi` |
-| Start a generation process | `startGeneration` |
-
-## Critical Patterns (Summary)
-- **Fetch API Data**: Use `fetchApi` to retrieve data from the API.
-- **Start Generation Process**: Utilize `startGeneration` to initiate a data generation process.
+| Fetch generations | `useGenerations()` |
+| Start generation | `useStartGeneration()` |
 <!-- L2:END -->
 
 <!-- L3:START -->
-## Critical Patterns (Detailed)
+## Critical Patterns (Summary)
 
-### Fetch API Data
+### Error Handling with ApiError
 
-Use `fetchApi` to retrieve data from the API, handling errors with `ApiError`.
+Handle structured API errors using the `ApiError` class which provides `status` and `code` fields for precise error categorization.
 
 ```typescript
-import { fetchApi, ApiError } from './lib/api';
+import { ApiError } from '@/lib/api';
 
-async function getData() {
-  try {
-    const data = await fetchApi('/endpoint');
-    console.log(data);
-  } catch (error) {
-    if (error instanceof ApiError) {
-      console.error('API Error:', error.message);
+try {
+  const data = await fetchApi<User>('/api/user');
+} catch (error) {
+  if (error instanceof ApiError) {
+    // Handle specific status codes
+    if (error.status === 401) {
+      // Redirect to login
     }
   }
 }
 ```
 
-### Start Generation Process
+### useStartGeneration Mutation
 
-Utilize `startGeneration` to initiate a data generation process, allowing for real-time updates.
+Use the `useStartGeneration` mutation to trigger generation workflows with automatic query invalidation.
 
 ```typescript
-import { startGeneration } from './lib/api';
+import { useStartGeneration } from '@/lib/api';
 
-function initiateGeneration() {
-  startGeneration({ type: 'example' })
-    .then(response => console.log('Generation started:', response))
-    .catch(error => console.error('Error starting generation:', error));
-}
+const { mutate, isLoading } = useStartGeneration();
+mutate({ mode: 'docs' });
 ```
-
 ## When to Use
 
-- When you need to fetch data from an external API.
-- When initiating a data generation process that requires real-time updates.
+- Fetching generation data or provider lists from the backend
+- Starting new generation workflows with proper mutation handling
+- Canceling in-progress generation tasks
+- Querying analytics and provider information
 
 ## Commands
 
 ```bash
-docker-compose up
-python repoforge/cli.py fetch-data
+docker compose -f docker-compose.dev.yml up -d
+python repoforge/cli.py dev
 ```
 
 ## Anti-Patterns
 
-### Don't: Ignore ApiError Handling
+### Don't: Ignore ApiError status codes
 
-Ignoring `ApiError` can lead to unhandled exceptions and poor user experience.
+Accessing `error.message` without checking `error.status` or `error.code` leads to brittle error handling that breaks on different error types.
 
 ```typescript
-// BAD
-async function getData() {
-  const data = await fetchApi('/endpoint'); // No error handling
-  console.log(data);
+// BAD - assumes all errors are generic
+catch (error) {
+  console.error(error.message); // Misses status/code context
 }
 ```
 <!-- L3:END -->

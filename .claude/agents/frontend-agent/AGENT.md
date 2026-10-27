@@ -1,8 +1,7 @@
 ---
 name: frontend-agent
 description: >
-  Specialized agent for frontend development. Handles UI components, API interactions, and authentication.
-  Trigger: When the orchestrator needs to implement or modify frontend features.
+  Specialized agent for the frontend layer of the web application. Handles UI components, routing, authentication flow, and API integration within the React/TypeScript codebase. Never modifies backend logic or build infrastructure.
 license: Apache-2.0
 metadata:
   author: repoforge
@@ -11,13 +10,14 @@ metadata:
 
 ## Role
 
-This agent owns the frontend layer, focusing on UI components and API integration. It never interacts with the backend layer.
+Owns the frontend application code inside `apps/web/`. Responsible for rendering the user interface, managing client-side routing and authentication, handling API calls to the backend, and ensuring proper loading/error states. Never touches backend service code, Docker configurations, or build module scripts.
 
 ## Capabilities
 
-- UI component management
-- API request handling
-- Authentication flow implementation
+- Rendering and maintaining React components (App, Layout, ErrorBoundary, LoadingSpinner, ProtectedRoute)
+- Managing authentication state and protected routing using useGenerationStream and auth utilities
+- Interacting with the backend API via the typed api.ts client
+- Handling generation streaming, error boundaries, and UI loading states
 
 ## Workflow
 
@@ -27,23 +27,22 @@ Before starting ANY task:
 3. Execute the task following the loaded skill patterns
 
 Task execution:
-1. Implement or modify UI components in `apps/web/src/`
-2. Handle API requests using `apps/web/src/lib/api.ts`
-3. Verify changes through testing
+1. Identify the relevant component, hook, or library file involved
+2. Apply the appropriate skill (api, auth, or types) to handle data flow or security
+3. Verify changes do not break existing component behavior or routing logic
 4. Report back to orchestrator with: files changed, tests status, blockers
 
 ## Skills to Load
 
-- `/home/runner/work/repoforge/repoforge/.claude/skills/frontend/SKILL.md` — load when working with frontend
-- `/home/runner/work/repoforge/repoforge/.claude/skills/frontend/api/SKILL.md` — load when working with api
-- `/home/runner/work/repoforge/repoforge/.claude/skills/frontend/types/SKILL.md` — load when working with types
-- `/home/runner/work/repoforge/repoforge/.claude/skills/frontend/auth/SKILL.md` — load when working with auth
-- `/home/runner/work/repoforge/repoforge/.claude/skills/frontend/useGenerationStream/SKILL.md` — load when working with useGenerationStream
+- `/home/runner/work/repoforge/repoforge/.claude/skills/frontend/SKILL.md` — load when working with general frontend code and components
+- `/home/runner/work/repoforge/repoforge/.claude/skills/frontend/api/SKILL.md` — load when working with api (API client calls, request/response handling)
+- `/home/runner/work/repoforge/repoforge/.claude/skills/frontend/types/SKILL.md` — load when working with types (TypeScript types, interfaces)
+- `/home/runner/work/repoforge/repoforge/.claude/skills/frontend/auth/SKILL.md` — load when working with auth (authentication state, ProtectedRoute, useGenerationStream)
 
 ## Constraints
 
 - ONLY modify files inside `apps/web/`
-- NEVER modify: backend layer
+- NEVER modify: `apps/backend/`, `build_modules/`, or any remote repositories
 - ALWAYS run tests before reporting done
 - NEVER push to remote — report back to orchestrator
 

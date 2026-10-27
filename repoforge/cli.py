@@ -32,7 +32,7 @@ Quick usage:
   repoforge export -w /my/repo --max-tokens 100000 --format xml
   repoforge compress -w /my/repo --aggressive --dry-run
   repoforge skills --model ollama/qwen2.5-coder:14b   # free local
-  repoforge skills --model github/gpt-4o-mini          # GitHub Copilot
+  repoforge skills --model groq/openai/gpt-oss-120b    # Groq free tier
   repoforge skills --model gateway/claude-sonnet-4     # via mcp-llm-bridge
 """
 
@@ -53,11 +53,18 @@ def _common_options(f):
     )(f)
     f = click.option("--model", default=None, help=(
         "LLM to use. Examples: claude-haiku-3-5, gpt-4o-mini, "
-        "groq/llama-3.1-70b-versatile, ollama/qwen2.5-coder:14b, github/gpt-4o-mini. "
+        "groq/llama-3.1-70b-versatile, ollama/qwen2.5-coder:14b, "
+        "groq/openai/gpt-oss-120b. "
         "Auto-detects from env vars if not set."
     ))(f)
     f = click.option("--api-key", default=None, help="Override API key.")(f)
     f = click.option("--api-base", default=None, help="Override API base URL.")(f)
+    f = click.option("--no-thinking", is_flag=True, default=False,
+        help=(
+            "Send chat_template_kwargs.enable_thinking=false. "
+            "Nemotron-style models otherwise prefix a thinking trace "
+            "and the skill draft no longer starts as markdown."
+        ))(f)
     f = click.option("--dry-run", is_flag=True, default=False,
         help="Scan and plan, but don't call the LLM or write files.")(f)
     f = click.option("-q", "--quiet", is_flag=True, default=False,
@@ -181,7 +188,7 @@ def main(verbose):
     help="After generation, run security scanner on generated output.")
 @click.option("--plugin/--no-plugin", "with_plugin", default=False, show_default=True,
     help="Generate plugin.json + commands/ hierarchy (Skills → Commands → Plugins).")
-def skills(working_dir, model, api_key, api_base, dry_run, quiet,
+def skills(working_dir, model, api_key, api_base, no_thinking, dry_run, quiet,
            max_files_per_layer,
            output_dir, no_opencode, complexity, do_serve, port, serve_only,
            with_hooks, do_score, targets, disclosure, do_compress, aggressive,
@@ -216,6 +223,7 @@ def skills(working_dir, model, api_key, api_base, dry_run, quiet,
             model=model,
             api_key=api_key,
             api_base=api_base,
+            disable_thinking=no_thinking,
             also_opencode=not no_opencode,
             verbose=not quiet,
             dry_run=dry_run,
@@ -297,7 +305,7 @@ SUPPORTED_LANGUAGES = [
 @click.option("--verify/--no-verify", "do_verify", default=True, show_default=True,
     help="Enable/disable LLM verification of generated chapters (Stage C).")
 @click.option("--verify-model", default=None,
-    help="Model for verification. Default: github/Phi-4 (or gpt-4o-mini if generator is Phi-4).")
+    help="Model for verification. Default: the same model that wrote the chapter.")
 @click.option("--no-verify-docs", is_flag=True, default=False,
     help="Disable BOTH deterministic corrections (Stage D) and LLM verification (Stage C).")
 @click.option("--facts-only/--no-facts-only", default=False, show_default=True,
@@ -329,7 +337,7 @@ SUPPORTED_LANGUAGES = [
     help="LLM for standard-tier chapters (overview, data-models, api-reference). Requires --model auto.")
 @click.option("--model-light", default=None,
     help="LLM for light-tier chapters (index, quickstart, dev-guide). Requires --model auto.")
-def docs(working_dir, model, api_key, api_base, dry_run, quiet,
+def docs(working_dir, model, api_key, api_base, no_thinking, dry_run, quiet,
          max_files_per_layer,
          output_dir, language, project_name, complexity, theme, do_serve, port, serve_only,
          chunked, do_verify, verify_model, no_verify_docs, facts_only, incremental,
@@ -382,6 +390,7 @@ def docs(working_dir, model, api_key, api_base, dry_run, quiet,
             model=model,
             api_key=api_key,
             api_base=api_base,
+            disable_thinking=no_thinking,
             language=language,
             project_name=project_name,
             verbose=not quiet,
@@ -401,6 +410,7 @@ def docs(working_dir, model, api_key, api_base, dry_run, quiet,
             model=model,
             api_key=api_key,
             api_base=api_base,
+            disable_thinking=no_thinking,
             language=language,
             project_name=project_name,
             verbose=not quiet,
@@ -1180,7 +1190,11 @@ def graph(workspace, output_path, fmt, graph_type, blast_radius, v2, depth, max_
                 else:
                     output = code_graph.to_mermaid()
             elif fmt == "json":
-                output = code_graph.to_json()
+                if v2:
+                    from .incremental import graph_json_identity
+                    output = code_graph.to_json(identity=graph_json_identity(workspace))
+                else:
+                    output = code_graph.to_json()
             elif fmt == "dot":
                 output = code_graph.to_dot()
             else:
@@ -3329,12 +3343,13 @@ def registry_search_cmd(query, top_k, depth, as_json, quiet):
 @_common_options
 @click.option("-o", "--output-dir", default=".claude", show_default=True)
 @click.option("--no-opencode", is_flag=True, default=False)
-def run_default(working_dir, model, api_key, api_base, dry_run, quiet, max_files_per_layer, output_dir, no_opencode):
+def run_default(working_dir, model, api_key, api_base, no_thinking, dry_run, quiet, max_files_per_layer, output_dir, no_opencode):
     """Alias for 'skills' (backwards compatibility)."""
     from .generator import generate_artifacts
     generate_artifacts(
         working_dir=working_dir, output_dir=output_dir,
         model=model, api_key=api_key, api_base=api_base,
+        disable_thinking=no_thinking,
         also_opencode=not no_opencode, verbose=not quiet, dry_run=dry_run,
     )
 

@@ -15,7 +15,7 @@ from repoforge.llm import (
     AUTO_DETECT_ORDER,
     DEFAULT_MODEL,  # noqa: F401
     LLM,
-    PROVIDER_PRESETS,  # noqa: F401
+    PROVIDER_PRESETS,
     _auto_detect_model,
     _find_preset,
     _is_reasoning_model,
@@ -231,15 +231,26 @@ class TestFindPreset:
     def test_exact_match_groq(self):
         preset = _find_preset("groq")
         assert preset["api_key_env"] == "GROQ_API_KEY"
+        assert preset["max_tokens"] == 1536
+
+    def test_nvidia_nim_preset(self):
+        preset = _find_preset("nvidia_nim")
+        assert preset["api_key_env"] == "NVIDIA_NIM_API_KEY"
+        assert preset["fallback_api_key_env"] == "NVIDIA_API_KEY"
+        assert preset["api_base"] == "https://integrate.api.nvidia.com/v1"
+
+    def test_nvidia_nim_accepts_the_local_env_name(self):
+        with patch.dict(os.environ, {"NVIDIA_API_KEY": "nvapi-test"}, clear=True):
+            llm = build_llm(model="nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b")
+        assert llm.api_key == "nvapi-test"
+        assert llm.api_base == "https://integrate.api.nvidia.com/v1"
 
     def test_exact_match_ollama(self):
         preset = _find_preset("ollama")
         assert preset["api_key_env"] is None
 
-    def test_exact_match_github(self):
-        preset = _find_preset("github")
-        assert preset["api_key_env"] == "GITHUB_TOKEN"
-        assert "azure" in preset["api_base"]
+    def test_github_preset_is_gone(self):
+        assert "github" not in PROVIDER_PRESETS
 
     def test_prefix_match(self):
         preset = _find_preset("claude-3")
@@ -288,6 +299,12 @@ class TestAutoDetectModel:
             model = _auto_detect_model()
             assert "ollama" in model
 
+    def test_github_token_does_not_select_a_model(self):
+        with patch.dict(os.environ, {"GITHUB_TOKEN": "ghp_present"}, clear=True):
+            model = _auto_detect_model()
+            assert not model.startswith("github/")
+            assert "ollama" in model
+
 
 # ---------------------------------------------------------------------------
 # build_llm factory
@@ -315,9 +332,9 @@ class TestBuildLLM:
             llm = build_llm(model="ollama/qwen2.5-coder:14b")
             assert llm.api_base == "http://gpu:11434"
 
-    def test_github_model_gets_azure_base(self):
-        llm = build_llm(model="github/gpt-4o-mini", api_key="ghp_test")
-        assert "azure" in llm.api_base
+    def test_github_model_is_refused(self):
+        with pytest.raises(ValueError, match="retired"):
+            build_llm(model="github/gpt-4o-mini", api_key="ghp_test")
 
     def test_api_key_from_env(self):
         with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "env-key"}):
@@ -383,6 +400,86 @@ class TestErrorHandling:
         with pytest.raises(TimeoutError):
             llm.complete("Hello")
 
+    @patch("repoforge.llm.time.sleep")
+    @patch("repoforge.llm.litellm.completion")
+    def test_rate_limit_waits_then_retries(self, mock_completion, mock_sleep):
+        from litellm.exceptions import RateLimitError
+
+        ok = MagicMock()
+        ok.choices = [MagicMock(message=MagicMock(content="done"))]
+        mock_completion.side_effect = [
+            RateLimitError(
+                message="try again in 15.3s",
+                llm_provider="groq",
+                model="groq/openai/gpt-oss-120b",
+            ),
+            ok,
+        ]
+        llm = LLM(model="groq/openai/gpt-oss-120b")
+        assert llm.complete("Hello") == "done"
+        mock_sleep.assert_called_once_with(15.3)
+        assert mock_completion.call_count == 2
+
+    @patch("repoforge.llm.time.sleep")
+    @patch("repoforge.llm.litellm.completion")
+    def test_rate_limit_gives_up_after_four_waits(self, mock_completion, mock_sleep):
+        from litellm.exceptions import RateLimitError
+
+        mock_completion.side_effect = RateLimitError(
+            message="try again in 15.3s",
+            llm_provider="groq",
+            model="groq/openai/gpt-oss-120b",
+        )
+        llm = LLM(model="groq/openai/gpt-oss-120b")
+        with pytest.raises(RateLimitError):
+            llm.complete("Hello")
+        assert mock_sleep.call_count == 4
+        assert mock_completion.call_count == 5
+
+    @patch("repoforge.llm.time.sleep")
+    @patch("repoforge.llm.litellm.completion")
+    def test_tpm_overflow_waits_a_full_minute_without_reset_header(
+        self, mock_completion, mock_sleep
+    ):
+        from litellm.exceptions import RateLimitError
+
+        ok = MagicMock()
+        ok.choices = [MagicMock(message=MagicMock(content="done"))]
+        mock_completion.side_effect = [
+            RateLimitError(
+                message=(
+                    "Limit 8000, Used 5361, Requested 5503. "
+                    "Please try again in 21.48s."
+                ),
+                llm_provider="groq",
+                model="groq/openai/gpt-oss-120b",
+            ),
+            ok,
+        ]
+        llm = LLM(model="groq/openai/gpt-oss-120b")
+        assert llm.complete("Hello") == "done"
+        mock_sleep.assert_called_once_with(60.0)
+
+    @patch("repoforge.llm.time.sleep")
+    @patch("repoforge.llm.litellm.completion")
+    def test_tpm_overflow_waits_at_least_the_token_reset(
+        self, mock_completion, mock_sleep
+    ):
+        from litellm.exceptions import RateLimitError
+
+        ok = MagicMock()
+        ok.choices = [MagicMock(message=MagicMock(content="done"))]
+        limited = RateLimitError(
+            message="Limit 8000, Used 5361, Requested 5503. Please try again in 21.48s.",
+            llm_provider="groq",
+            model="groq/openai/gpt-oss-120b",
+        )
+        limited.response = MagicMock(headers={"x-ratelimit-reset-tokens": "7.66s"})
+        mock_completion.side_effect = [limited, ok]
+        llm = LLM(model="groq/openai/gpt-oss-120b")
+        assert llm.complete("Hello") == "done"
+        mock_sleep.assert_called_once_with(60.0)
+
 
 # ---------------------------------------------------------------------------
 # _is_reasoning_model
@@ -418,87 +515,13 @@ class TestIsReasoningModel:
 
 
 # ---------------------------------------------------------------------------
-# GitHub Models — all 6 models
+# GitHub Models was retired on 2026-07-30
 # ---------------------------------------------------------------------------
 
-class TestGitHubModels:
-    """Verify build_llm resolves all GitHub Models correctly."""
-
-    GITHUB_MODELS = [
-        "github/gpt-4o",
-        "github/gpt-4o-mini",
-        "github/DeepSeek-R1",
-        "github/Meta-Llama-3.1-405B-Instruct",
-        "github/Phi-4",
-        "github/Meta-Llama-3.1-8B-Instruct",
-    ]
-
-    @pytest.mark.parametrize("model", GITHUB_MODELS)
-    def test_github_model_resolves_api_base(self, model):
-        llm = build_llm(model=model, api_key="ghp_test")
-        assert llm.api_base == "https://models.inference.ai.azure.com"
-
-    @pytest.mark.parametrize("model", GITHUB_MODELS)
-    def test_github_model_preserves_model_string(self, model):
-        llm = build_llm(model=model, api_key="ghp_test")
-        assert llm.model == model
-
-    @pytest.mark.parametrize("model", GITHUB_MODELS)
-    def test_github_model_resolves_api_key_from_env(self, model):
-        with patch.dict(os.environ, {"GITHUB_TOKEN": "ghp_env_token"}):
-            llm = build_llm(model=model)
-            assert llm.api_key == "ghp_env_token"
-
-    def test_deepseek_r1_gets_reasoning_temperature(self):
-        llm = build_llm(model="github/DeepSeek-R1", api_key="ghp_test")
-        assert llm.temperature == 1.0
-
-    def test_gpt4o_gets_default_temperature(self):
-        llm = build_llm(model="github/gpt-4o", api_key="ghp_test")
-        assert llm.temperature == 0.0
-
-    def test_llama_gets_default_temperature(self):
-        llm = build_llm(model="github/Meta-Llama-3.1-405B-Instruct", api_key="ghp_test")
-        assert llm.temperature == 0.0
-
-    def test_phi4_gets_default_temperature(self):
-        llm = build_llm(model="github/Phi-4", api_key="ghp_test")
-        assert llm.temperature == 0.0
-
-    def test_explicit_temperature_overrides_reasoning_default(self):
-        llm = build_llm(model="github/DeepSeek-R1", api_key="ghp_test", temperature=0.5)
-        assert llm.temperature == 0.5
-
-    @patch("repoforge.llm.litellm.completion")
-    def test_github_deepseek_r1_calls_litellm_correctly(self, mock_completion):
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = "ok"
-        mock_completion.return_value = mock_response
-
-        llm = build_llm(model="github/DeepSeek-R1", api_key="ghp_test")
-        llm.complete("say ok")
-
-        call_kwargs = mock_completion.call_args.kwargs
-        assert call_kwargs["model"] == "github/DeepSeek-R1"
-        assert call_kwargs["api_base"] == "https://models.inference.ai.azure.com"
-        assert call_kwargs["api_key"] == "ghp_test"
-        assert call_kwargs["temperature"] == 1.0
-
-    @patch("repoforge.llm.litellm.completion")
-    def test_github_phi4_calls_litellm_correctly(self, mock_completion):
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = "ok"
-        mock_completion.return_value = mock_response
-
-        llm = build_llm(model="github/Phi-4", api_key="ghp_test")
-        llm.complete("say ok")
-
-        call_kwargs = mock_completion.call_args.kwargs
-        assert call_kwargs["model"] == "github/Phi-4"
-        assert call_kwargs["api_base"] == "https://models.inference.ai.azure.com"
-        assert call_kwargs["temperature"] == 0.0
+class TestRetiredGitHubModels:
+    def test_every_github_model_is_refused(self):
+        with pytest.raises(ValueError, match="retired"):
+            build_llm(model="github/gpt-4o-mini", api_key="ghp_test")
 
 
 # ---------------------------------------------------------------------------

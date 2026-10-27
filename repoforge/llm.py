@@ -4,7 +4,6 @@ llm.py - Single LLM abstraction over LiteLLM.
 Supports any provider LiteLLM supports:
   - Anthropic   (claude-haiku-3-5, claude-sonnet-4-5, ...)
   - OpenAI      (gpt-4o-mini, gpt-4o, ...)
-  - GitHub Models (all models on models.inference.ai.azure.com)
   - Groq        (llama-3.1-70b-versatile, ...)
   - Ollama      (qwen2.5-coder:14b, llama3.2, deepseek-coder-v2, ...)
   - Google      (gemini-1.5-flash, ...)
@@ -17,8 +16,6 @@ Usage:
     llm = build_llm("claude-haiku-3-5")        # explicit model
     llm = build_llm("ollama/qwen2.5-coder:14b")  # local
     llm = build_llm("groq/llama-3.1-70b-versatile")
-    llm = build_llm("github/DeepSeek-R1")      # GitHub Models (any model)
-    llm = build_llm("github/gpt-4o-mini")      # GitHub Models (OpenAI)
     llm = build_llm("gateway/claude-sonnet-4-20250514")  # via mcp-llm-bridge
     llm = build_llm("gateway/gpt-4o")           # any model through the gateway
 
@@ -29,10 +26,13 @@ Usage:
 """
 
 import os
+import re
+import time
 from dataclasses import dataclass, field
 from typing import Iterator, Optional, Protocol, runtime_checkable
 
 import litellm
+from litellm.exceptions import RateLimitError
 
 # Silence LiteLLM's verbose success logging
 litellm.success_callback = []
@@ -81,7 +81,9 @@ PROVIDER_PRESETS = {
     },
     "groq": {
         "api_key_env": "GROQ_API_KEY",
-        "max_tokens": 4096,
+        # Free-tier chat models share 8k tokens per minute. Reserving 4096
+        # on every call leaves no room for the next one in that minute.
+        "max_tokens": 1536,
         "temperature": 0.0,
     },
     "ollama": {
@@ -90,14 +92,16 @@ PROVIDER_PRESETS = {
         "temperature": 0.0,
         "api_base": None,  # reads OLLAMA_BASE_URL or default
     },
-    "github": {
-        "api_key_env": "GITHUB_TOKEN",
-        "api_base": "https://models.inference.ai.azure.com",
+    "mistral": {
+        "api_key_env": "MISTRAL_API_KEY",
         "max_tokens": 4096,
         "temperature": 0.0,
     },
-    "mistral": {
-        "api_key_env": "MISTRAL_API_KEY",
+    "nvidia_nim": {
+        "api_key_env": "NVIDIA_NIM_API_KEY",
+        # LiteLLM's name. Local setups often export NVIDIA_API_KEY instead.
+        "fallback_api_key_env": "NVIDIA_API_KEY",
+        "api_base": "https://integrate.api.nvidia.com/v1",
         "max_tokens": 4096,
         "temperature": 0.0,
     },
@@ -117,8 +121,25 @@ PROVIDER_PRESETS = {
 # Default model if nothing is configured
 DEFAULT_MODEL = "claude-haiku-3-5"
 
+# One call plus four waits. A token-per-minute overflow waits out the
+# minute. The "try again in 21s" hint does not drop thousands of tokens
+# out of that window.
+_RATE_LIMIT_RETRIES = 4
+_RATE_LIMIT_WAIT_CAP_S = 90.0
+_TPM_WINDOW_S = 60.0
+_RETRY_AFTER = re.compile(r"try again in ([0-9]+(?:\.[0-9]+)?)s", re.IGNORECASE)
+_TPM_FIGURES = re.compile(
+    r"Limit\s+([0-9]+),\s*Used\s+([0-9]+),\s*Requested\s+([0-9]+)",
+    re.IGNORECASE,
+)
+_DURATION = re.compile(
+    r"^(?:(\d+)m)?(\d+(?:\.\d+)?)s$",
+    re.IGNORECASE,
+)
+
 # Auto-detection order from env vars.
-# GitHub Models is the default provider (free tier with GITHUB_TOKEN).
+# GITHUB_TOKEN is not a model credential. GitHub Models was retired
+# on 2026-07-30, and that token is present on almost every Actions runner.
 # LLM Gateway is opt-in: set LLM_GATEWAY_AUTH_TOKEN to route through
 # mcp-llm-bridge for centralized credential management and fallback.
 AUTO_DETECT_ORDER = [
@@ -126,7 +147,6 @@ AUTO_DETECT_ORDER = [
     ("ANTHROPIC_AUTH_TOKEN", "claude-haiku-3-5"),
     ("OPENAI_API_KEY", "gpt-4o-mini"),
     ("GROQ_API_KEY", "groq/llama-3.1-70b-versatile"),
-    ("GITHUB_TOKEN", "github/gpt-4o-mini"),
     ("GEMINI_API_KEY", "gemini/gemini-1.5-flash"),
     ("MISTRAL_API_KEY", "mistral/mistral-small"),
     ("LLM_GATEWAY_AUTH_TOKEN", "gateway/claude-sonnet-4-20250514"),
@@ -154,7 +174,7 @@ class LLM:
         messages.append({"role": "user", "content": prompt})
 
         kwargs = self._base_kwargs()
-        response = litellm.completion(messages=messages, **kwargs)
+        response = _completion_with_rate_limit_retry(messages, kwargs)
         return response.choices[0].message.content or ""
 
     def stream(self, prompt: str, system: Optional[str] = None) -> Iterator[str]:
@@ -186,6 +206,76 @@ class LLM:
         return kwargs
 
 
+def _header_value(exc: BaseException, name: str) -> Optional[str]:
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+    if headers is None or not hasattr(headers, "get"):
+        return None
+    value = headers.get(name) or headers.get(name.lower()) or headers.get(name.title())
+    if value is None:
+        return None
+    return str(value)
+
+
+def _parse_duration(value: str) -> Optional[float]:
+    text = value.strip()
+    try:
+        return float(text)
+    except ValueError:
+        pass
+    match = _DURATION.match(text)
+    if not match:
+        return None
+    minutes = float(match.group(1) or 0)
+    return minutes * 60 + float(match.group(2))
+
+
+def _tpm_overflow(exc: BaseException) -> bool:
+    """True when this request cannot fit in the tokens still left this minute."""
+    match = _TPM_FIGURES.search(str(exc))
+    if not match:
+        return False
+    limit, used, requested = (int(group) for group in match.groups())
+    return used + requested > limit
+
+
+def _retry_after_seconds(exc: BaseException) -> float:
+    """Seconds to wait after a 429.
+
+    A token-per-minute overflow waits for ``x-ratelimit-reset-tokens``,
+    and at least one minute when that header is missing or shorter than
+    the window. Other 429s use ``retry-after`` or the "try again in" hint.
+    """
+    if _tpm_overflow(exc):
+        reset = _parse_duration(_header_value(exc, "x-ratelimit-reset-tokens") or "")
+        wait = _TPM_WINDOW_S if reset is None else max(reset, _TPM_WINDOW_S)
+        return min(wait, _RATE_LIMIT_WAIT_CAP_S)
+
+    raw = _header_value(exc, "retry-after")
+    if raw is not None:
+        try:
+            return min(max(float(raw), 0.0), _RATE_LIMIT_WAIT_CAP_S)
+        except ValueError:
+            parsed = _parse_duration(raw)
+            if parsed is not None:
+                return min(parsed, _RATE_LIMIT_WAIT_CAP_S)
+    match = _RETRY_AFTER.search(str(exc))
+    if match:
+        return min(float(match.group(1)), _RATE_LIMIT_WAIT_CAP_S)
+    return 20.0
+
+
+def _completion_with_rate_limit_retry(messages: list, kwargs: dict):
+    """Call LiteLLM, waiting out a token-per-minute 429 before failing."""
+    for attempt in range(_RATE_LIMIT_RETRIES + 1):
+        try:
+            return litellm.completion(messages=messages, **kwargs)
+        except RateLimitError as exc:
+            if attempt == _RATE_LIMIT_RETRIES:
+                raise
+            time.sleep(_retry_after_seconds(exc))
+
+
 # ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
@@ -196,6 +286,7 @@ def build_llm(
     api_base: Optional[str] = None,
     max_tokens: Optional[int] = None,
     temperature: Optional[float] = None,
+    disable_thinking: bool = False,
 ) -> LLMProvider:
     """
     Build an LLM provider instance.
@@ -205,7 +296,6 @@ def build_llm(
         "gpt-4o-mini"                       -> OpenAI
         "groq/llama-3.1-70b-versatile"      -> Groq
         "ollama/qwen2.5-coder:14b"          -> Ollama local
-        "github/gpt-4o-mini"                -> GitHub Models
         "gemini/gemini-1.5-flash"           -> Google
         "mistral/mistral-small"             -> Mistral
         "cli/claude"                        -> CLI adapter (Claude Code)
@@ -231,8 +321,14 @@ def build_llm(
             )
         return CliLLMAdapter(CLI_REGISTRY[tool_name])
 
-    # Normalize: "github/gpt-4o-mini" -> prefix="github"
+    # Normalize: "groq/llama-3.1-70b-versatile" -> prefix="groq"
     prefix = model.split("/")[0].lower()
+    if prefix == "github":
+        raise ValueError(
+            "GitHub Models was retired on 2026-07-30. "
+            "A github/ model does not reach an inference API. "
+            "Use Groq, or another provider with its own key."
+        )
 
     preset = _find_preset(prefix)
 
@@ -252,12 +348,6 @@ def build_llm(
     if prefix == "ollama" and not resolved_base:
         resolved_base = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
-    # GitHub Models: all models use the same OpenAI-compatible endpoint.
-    # litellm recognizes "github/" as a provider and routes to OpenAI-compatible,
-    # setting api_base to models.inference.ai.azure.com automatically.
-    if prefix == "github":
-        resolved_base = resolved_base or "https://models.inference.ai.azure.com"
-
     # LLM Gateway (mcp-llm-bridge): rewrite model for LiteLLM.
     # "gateway/claude-sonnet-4" -> "openai/claude-sonnet-4" with gateway base_url.
     # The gateway's /v1/chat/completions endpoint is OpenAI-compatible,
@@ -269,6 +359,13 @@ def build_llm(
         model = f"{litellm_prefix}/{model_name}"
         # Send X-Project header for per-project credential scoping.
         extra["extra_headers"] = {"X-Project": "repoforge"}
+
+    if disable_thinking:
+        body = dict(extra.get("extra_body") or {})
+        template = dict(body.get("chat_template_kwargs") or {})
+        template["enable_thinking"] = False
+        body["chat_template_kwargs"] = template
+        extra["extra_body"] = body
 
     # Reasoning models (o1, o3, DeepSeek-R1, etc.) reject temperature=0.
     # Auto-set to 1.0 unless the caller explicitly provided a temperature.

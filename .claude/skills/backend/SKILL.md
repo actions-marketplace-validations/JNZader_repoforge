@@ -1,26 +1,25 @@
 ---
 name: backend-layer
 description: >
-  This layer provides the backend functionality for the RepoForge application, 
-  handling API requests, authentication, and database migrations.
-  Trigger: When working in backend/ — adding, modifying, or debugging server-side logic.
+  Python FastAPI backend layer for RepoForge Web. Handles HTTP routing, middleware, authentication, rate limiting, and database migrations. Owns all server-side request processing and API endpoints.
+  Trigger: When working in backend/ directory and its main responsibility
 license: Apache-2.0
 metadata:
   author: repoforge
   version: "1.0"
   complexity: medium
-  token_estimate: 800
+  token_estimate: 1200
   dependencies: []
-  related_skills: []
+  related_skills: [frontend-layer, build_modules-layer]
   load_priority: high
 ---
 
 <!-- L1:START -->
 # backend-layer
 
-This skill covers the backend functionality of the RepoForge application.
+The Python FastAPI backend layer for RepoForge Web, handling HTTP routing, middleware, authentication, rate limiting, and database migrations. Owns all server-side request processing and API endpoints.
 
-**Trigger**: When working in backend/ directory and its main responsibility is to manage server-side logic.
+**Trigger**: When working in `backend/` directory — adding routes, modifying middleware, debugging authentication, or extending API endpoints.
 <!-- L1:END -->
 
 <!-- L2:START -->
@@ -28,60 +27,69 @@ This skill covers the backend functionality of the RepoForge application.
 
 | Task | Pattern |
 |------|---------|
-| Configure logging | `configure_logging()` |
-| Run migrations | `run_migrations_online()` |
+| Run migrations | `cd apps/server && alembic upgrade head` |
+| Start server | `uvicorn apps.server.main:app --reload` |
+| Test endpoints | `pytest apps/server/tests/` |
 
 ## Critical Patterns (Summary)
-- **Middleware Configuration**: Set up custom middleware for request handling.
-- **Database Migration**: Manage database schema changes using Alembic.
-<!-- L2:END -->
+- **Middleware Chain**: FastAPI middleware runs in order — correlation_id → request_logging → security_headers. Each must call `call_next` to pass control.
+- **Settings Fail-Fast**: `Settings` from `config.py` validates required env vars on startup; missing vars cause immediate exit.
 
-<!-- L3:START -->
 ## Critical Patterns (Detailed)
 
-### Middleware Configuration
+### Middleware Chain
 
-Set up custom middleware for handling requests, such as logging and authentication.
+FastAPI middleware executes in declaration order. Each handler must invoke `call_next` to forward the request; omitting this breaks the chain and returns 500 errors.
 
 ```python
-# apps/server/app/main.py
-app.add_middleware(correlation_id_middleware)
-app.add_middleware(request_logging_middleware)
-app.add_middleware(security_headers_middleware)
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):  # noqa: ANN001
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 ```
 
-### Database Migration
-
-Manage database schema changes using Alembic for version control.
+### Settings Fail-Fast
 
 ```python
-# apps/server/alembic/env.py
-run_migrations_online()
+from apps.server.app.config import Settings
+
+settings = Settings()  # Raises ValueError if required vars missing
 ```
 
 ## When to Use
 
-- When implementing new API endpoints that require authentication.
-- When modifying database schemas and needing to run migrations.
+- Adding new HTTP routes or API endpoints
+- Modifying request validation or authentication flow
+- Configuring rate limits or adding middleware
+- Running or writing database migrations
+
+## Adding a New middleware
+
+1. Create `<name>.py` in `apps/server/app/middleware/`
+2. Export a FastAPI dependency or middleware function following existing pattern
+3. Add to middleware chain in `apps/server/app/main.py` if needed
+4. Verify with `pytest apps/server/tests/middleware/`
 
 ## Commands
 
 ```bash
-# To run the server
-uvicorn apps.server.app.main:app --reload
-
-# To run migrations
-alembic upgrade head
+cd apps/server && alembic upgrade head       # Run migrations
+uvicorn apps.server.main:app --reload        # Start dev server
+pytest apps/server/tests/                    # Run test suite
 ```
 
 ## Anti-Patterns
 
-### Don't: Change API response formats without updating the frontend
-
-This can lead to broken integrations and user-facing errors.
+### Don't: Skip `call_next` in middleware
 
 ```python
-# BAD
-return {"message": "success"}  # Frontend expects a different structure
+@app.middleware("http")
+async def bad_middleware(request: Request, call_next):
+    # BUG: Missing call_next — request never proceeds
+    return JSONResponse({"error": "chain broken"}, status_code=500)
 ```
+
+**Why**: Without calling `call_next`, the middleware short-circuits the entire request pipeline, returning a 500 error to the client and breaking all downstream handlers.
+
 <!-- L3:END -->

@@ -5,7 +5,8 @@
 # Generates SKILL.md and AGENT.md files for Claude Code / OpenCode
 # and commits them back to the repository.
 #
-# Uses GitHub Models (requires GH_MODELS_TOKEN secret with models:read scope).
+# Uses NVIDIA NIM (repository secret NVIDIA_NIM_API_KEY).
+# Nemotron thinking traces are not skill markdown, so no-thinking is on.
 #
 # SETUP:
 #   1. Copy this file to your repo's .github/workflows/skills.yml
@@ -40,13 +41,13 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Generate skills and agents
-        uses: JNZader/repoforge@v0.4.0
+        uses: JNZader/repoforge@main
         with:
           command: skills
           output-dir: .claude
-          model: github/gpt-4o-mini
-          # GitHub Models requires a PAT with models:read scope (automatic GITHUB_TOKEN is insufficient)
-          github-token: ${{ secrets.GH_MODELS_TOKEN }}
+          model: nvidia_nim/nvidia/nemotron-3.5-lightning-30b-a3b
+          api-key: ${{ secrets.NVIDIA_NIM_API_KEY }}
+          no-thinking: true
 
       - name: Commit generated files
         uses: stefanzweifel/git-auto-commit-action@v7

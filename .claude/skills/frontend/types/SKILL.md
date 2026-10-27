@@ -1,25 +1,25 @@
 ---
-name: generate-request-types
+name: add-types-endpoint
 description: >
-  This skill covers the creation and management of generation request types.
-  Trigger: Load this skill when working with types related to generation requests.
+  Type-safe frontend types for generation workflows and SSE events.
+  Trigger: when adding new generation types or SSE events to the frontend.
 license: Apache-2.0
 metadata:
   author: repoforge
   version: "1.0"
-  complexity: low
-  token_estimate: 350
+  complexity: medium
+  token_estimate: 450
   dependencies: []
   related_skills: []
   load_priority: high
 ---
 
 <!-- L1:START -->
-# Generate Request Types
+# add-types-endpoint
 
-This skill covers the creation and management of generation request types.
+Type-safe frontend types for generation workflows and SSE events.
 
-**Trigger**: Load this skill when working with types related to generation requests.
+**Trigger**: when adding new generation types or events to the frontend.
 <!-- L1:END -->
 
 <!-- L2:START -->
@@ -27,59 +27,66 @@ This skill covers the creation and management of generation request types.
 
 | Task | Pattern |
 |------|---------|
-| Create a user type | `User` |
-| Define generation mode | `GenerationMode` |
+| Validate user login | `User` |
+| Create generation request | `GenerateRequest` |
 
 ## Critical Patterns (Summary)
-- **User**: Defines the structure for user-related data.
-- **GenerationMode**: Specifies the mode of generation for requests.
+- **User Pattern**: Validates `github_user_id` and `login` from `User` interface
+- **GenerationRequest Pattern**: Constructs `GenerateRequest` with required `repo_url`, `mode`, and `provider`
 <!-- L2:END -->
 
 <!-- L3:START -->
 ## Critical Patterns (Detailed)
 
-### User
+### User Pattern
 
-Defines the structure for user-related data, encapsulating user attributes.
+Validates `github_user_id` and `login` from `User` interface to ensure authenticated session state before initiating generation workflows.
 
 ```typescript
-// Example of User type usage
-const newUser: User = {
-  id: '123',
-  name: 'John Doe',
-  email: 'john@example.com'
+import { User } from '@/lib/types';
+
+if (!User || !User.github_user_id) {
+  throw new Error('User not authenticated');
+}
+```
+### GenerationRequest Pattern
+
+Constructs `GenerateRequest` with required `repo_url`, `mode`, and `provider` fields to start a new generation pipeline.
+
+```typescript
+import { GenerateRequest } from '@/lib/types';
+
+const request: GenerateRequest = {
+  repo_url: 'https://github.com/example/repo',
+  mode: 'skills',
+  provider: 'openai',
 };
 ```
-
-### GenerationMode
-
-Specifies the mode of generation for requests, allowing for different generation strategies.
-
-```typescript
-// Example of GenerationMode usage
-const mode: GenerationMode = GenerationMode.AUTOMATIC;
-```
-
 ## When to Use
 
-- When defining user data structures in your application.
-- When specifying how generation requests should be processed.
+- Validating authenticated user session before generation
+- Constructing generation requests with proper mode and provider selection
+- Handling user authentication state in generation workflows
 
 ## Commands
 
 ```bash
-docker-compose up
-python repoforge/cli.py generate
+docker build -t repoforge/app:latest .
+python repoforge/cli.py --help
 ```
 
 ## Anti-Patterns
 
-### Don't: Use generic types
+### Don't: Missing required fields in GenerateRequest
 
-Using overly generic types can lead to confusion and errors in type safety.
+<Why it's wrong: Omitting `repo_url`, `mode`, or `provider` causes runtime errors during generation pipeline initialization. All three fields are required per the `GenerateRequest` interface definition.>
 
 ```typescript
-// BAD
-const genericUser: any = {};
+import { GenerateRequest } from '@/lib/types';
+
+const badRequest: GenerateRequest = {
+  // Missing repo_url, mode, provider — will fail validation
+  mode: 'skills',
+};
 ```
 <!-- L3:END -->

@@ -1,25 +1,25 @@
 ---
-name: use-auth-provider
+name: add-auth-endpoint
 description: >
-  This skill covers patterns for implementing authentication in a frontend application.
-  Trigger: Load this skill when managing user authentication.
+  Adding authentication endpoints and managing auth state across the app.
+  Trigger: when adding new auth-protected routes or API calls.
 license: Apache-2.0
 metadata:
   author: repoforge
   version: "1.0"
   complexity: low
-  token_estimate: 350
+  token_estimate: 450
   dependencies: []
   related_skills: []
   load_priority: high
 ---
 
 <!-- L1:START -->
-# use-auth-provider
+# add-auth-endpoint
 
-This skill covers patterns for implementing authentication in a frontend application.
+One sentence: Adding authentication endpoints and managing auth state across the app.
 
-**Trigger**: Load this skill when managing user authentication.
+**Trigger**: when adding new auth-protected routes or API calls.
 <!-- L1:END -->
 
 <!-- L2:START -->
@@ -27,58 +27,56 @@ This skill covers patterns for implementing authentication in a frontend applica
 
 | Task | Pattern |
 |------|---------|
-| Set API URL | `set-api-url` |
-| Use Auth Provider | `use-auth-provider` |
-
-## Critical Patterns (Summary)
-- **Set API URL**: Define the base URL for API requests.
-- **Use Auth Provider**: Wrap your application with the AuthProvider for authentication context.
+| Add auth provider | `<AuthProvider>` |
+| Get auth state | `useAuth()` |
 <!-- L2:END -->
 
 <!-- L3:START -->
-## Critical Patterns (Detailed)
+## Critical Patterns
 
-### Set API URL
+### Use AuthProvider to wrap app
 
-Define the base URL for API requests to ensure all authentication requests are directed correctly.
+Wrap the app shell with `AuthProvider` to make `useAuth` available throughout the component tree.
 
 ```typescript
-const apiUrl = API_URL; // Use the exported API_URL for consistent API endpoint
+import { AuthProvider } from '@/lib/auth';
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <AuthProvider>
+    <App />
+  </AuthProvider>,
+);
 ```
 
-### Use Auth Provider
+### Use useAuth to access context
 
-Wrap your application with the AuthProvider to provide authentication context to all components.
+Call `useAuth()` anywhere inside a provider-wrapped tree to get the auth context without prop-drilling.
 
 ```typescript
-import { AuthProvider } from './lib/auth';
-
-const App = () => (
-  <AuthProvider>
-    {/* Your application components */}
-  </AuthProvider>
-);
+const { token, loading } = useAuth();
+if (loading) return <LoadingSpinner />;
 ```
 
 ## When to Use
 
-- When setting up the authentication context for your application.
-- When configuring API endpoints for authentication requests.
+- Adding a new protected API route
+- Checking auth state in a component
+- Accessing user token globally
 
 ## Commands
 
 ```bash
-docker-compose up
-python repoforge/cli.py
+docker build -t myapp .
+docker run -p 3000:80 myapp
 ```
 
 ## Anti-Patterns
 
-### Don't: Hardcode API URLs
+### Don't: Access auth outside AuthProvider
 
-Hardcoding API URLs can lead to maintenance issues and inconsistencies.
+Calling `useAuth()` outside an `AuthProvider` boundary throws an error.
 
 ```typescript
-const apiUrl = 'http://localhost:3000/api'; // BAD
+const { token } = useAuth(); // BAD: throws 'useAuth must be used within an AuthProvider'
 ```
 <!-- L3:END -->

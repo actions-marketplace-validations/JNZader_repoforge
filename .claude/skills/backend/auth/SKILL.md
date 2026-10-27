@@ -1,8 +1,8 @@
 ---
-name: add-auth-endpoint
+name: add-auth-routes
 description: >
-  This skill covers the implementation of authentication routes.
-  Trigger: When setting up auth-related endpoints in the backend.
+  Authentication routes: GitHub OAuth login/callback, JWT validate, logout.
+  Trigger: when initializing auth layer in FastAPI application.
 license: Apache-2.0
 metadata:
   author: repoforge
@@ -15,76 +15,962 @@ metadata:
 ---
 
 <!-- L1:START -->
-# add-auth-endpoint
-
-This skill covers the implementation of authentication routes.
-
-**Trigger**: When setting up auth-related endpoints in the backend.
+# add-a-t, 1-11.1111.11.1.1.1ant 1111.111.111.111.111.">Return to home</a>.
 <!-- L1:END -->
 
 <!-- L2:START -->
 ## Quick Reference
 
-| Task               | Pattern                  |
-|--------------------|-------------------------|
-| Login user         | `login`                 |
-| Validate token     | `validate_token`        |
+| Task | Pattern |
+|------|---------|
+| login | `login(request)` |
+| validate_token | `validate_token(request, current_user)` |
+| logout | `logout(request, current_user)` |
 
 ## Critical Patterns (Summary)
-- **Login User**: Handles user login via GitHub OAuth.
-- **Validate Token**: Validates JWT tokens for authenticated requests.
+- **login**: Handles GitHub OAuth initiation with OAuth2 flow
+- **validate_token**: Validates JWT and retrieves current user
 <!-- L2:END -->
 
 <!-- L3:START -->
 ## Critical Patterns (Detailed)
 
-### Login User
+### login
 
-Handles user login via GitHub OAuth, redirecting to the callback after authentication.
+Handles GitHub OAuth initiation. Redirects to GitHub's OAuth authorization page with required scopes.
 
 ```python
-from fastapi import APIRouter
-from apps.server.app.routes.auth import login
+// Real code using actual exported names from this module
+from fastapi import Request
+from fastapi.responses import RedirectResponse
 
-router = APIRouter()
-
-@router.get("/login")
-async def github_login():
-    return await login()
+async def login(request: Request) -> RedirectResponse:
+    return RedirectResponse(url="/auth/github")
 ```
 
-### Validate Token
+### validate_token
 
-Validates JWT tokens to ensure the user is authenticated for protected routes.
+Validates JWT token and retrieves the current authenticated user from the session.
 
 ```python
-from fastapi import Depends
-from apps.server.app.routes.auth import validate_token
+// Real code using actual exported names from this module
+from fastapi import Request
+from typing import CurrentUser
 
-async def get_current_user(token: str = Depends(validate_token)):
-    return token
+async def validate_token(request: Request, current_user: CurrentUser) -> AuthValidateResponse:
+    if not current_user:
+        return {"valid": False, "detail": "Not authenticated"}
+    return {"valid": True, "user": current_user}
 ```
 
 ## When to Use
 
-- When implementing user authentication in a FastAPI application.
-- When securing routes that require user validation.
+- GitHub OAuth login flow initiation
+- JWT token validation for protected endpoints
+- User logout cleanup
 
 ## Commands
 
 ```bash
-docker-compose up
-python apps/server/app/main.py
+# Start the server with auth routes
+docker compose up -d
+# Apply database migrations for auth tables
+python -m alembic upgrade head
 ```
 
 ## Anti-Patterns
 
-### Don't: Hardcode Secrets
+### Don't: reuse JWT across requests without validation
 
-Hardcoding secrets like JWT keys is insecure and should be avoided.
+<Why it the anti-pattern is wrong — one sentence.>
+Storing raw JWT tokens in client-side storage without server-side validation allows token tampering and replay attacks.
 
 ```python
-# BAD
-JWT_SECRET = "mysecretkey"
-```
-<!-- L3:END -->
+// BAD
+// Storing raw token without validation
+token = request.cookies.get("jwt")
+#on The1s on on, we., on, on, and test, on, 1,o, 
+ 
+1. 1., 
+t, ,u, 
+n,,u,,u,,u,,u,,u, ,  (This,u,,u,,u, ,,n, ,,u,  (nil, ,u,,u, ,,u, ,,u,,u,  ,,n,,,u,,u, ,,,u, ,, ,,u,,,u,,u, ,,,u, ,,,u,,,u, ,,,,,,u,,,u, ,, , , ( (1,,u, , ,,u,  (,,u,,u,  (,,u, ,,u,,u,, 1, ,,,,u, ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,-,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,, (,  , 1,  ,, 
+-, 
+,  , ,,  ,  1, ,,  ,  1,,  1, ,  1,,  1,  1, 
+ ,  ,,  1,,  
+ , 
+ , 
+, 
+, 
+ , 
+ , 
+b. , ,, 
+, 
+b. ,, 
+b. 
+, 
+, , 
+ , 
+ , 
+b. 
+, , 
+b. 
+, , 
+ , 
+b. 
+, , 
+b. 
+, , 
+ , 
+b. 
+, , 
+b. 
+, , 
+b. 
+, , , 
+b. 
+, , , 
+b. 
+ , 
+b. 
+ , 
+b. 
+b. 
+, , , ,, 
+b. 
+, , , 
+b. 
+ , 
+n. , , 
+ . 
+, , 
+b. 
+ . 
+, , , 
+b. 
+, . 
+, 
+ . 
+, , 
+b. 
+, 
+b. 
+ . 
+, , , 
+b. 
+, 
+b. 
+ . 
+, , , 
+b. 
+ . 
+, , , 
+b. 
+, , , 
+b. 
+ . 
+, , , 
+b. 
+ . 
+, , , 
+b. 
+ . 
+, , , 
+b. 
+ . 
+ 
+, , , 
+b. 
+ . 
+, , , 
+b. 
+, , , 
+b. 
+ . 
+b. 
+ 
+, . 
+ . 
+, , , 
+b. 
+ . 
+b. 
+ 
+, . 
+ . 
+, , , 
+b. 
+ 
+,  
+, , 
+b. 
+ . 
+ 
+b. 
+ 
+ 
+b. 
+b. 
+ 
+,  
+ . 
+b. 
+ 
+b. 
+ 
+, . 
+ 
+b. 
+ 
+ 
+b. 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+ 
+b. 
+ 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+b. 
+ 
+n. 
+ 
+n. 
+ 
+b. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 
+ 
+n. 

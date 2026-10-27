@@ -1,25 +1,25 @@
 ---
-name: define-request-response-schemas
+name: add-schemas-endpoint
 description: >
-  This skill covers the creation of Pydantic v2 request and response schemas.
-  Trigger: Load this skill when defining schemas for the RepoForge Web API.
+  Pydantic v2 request/response schemas for RepoForge Web API.
+  Trigger: when defining or validating schemas in apps/server/app/models/schemas.py
 license: Apache-2.0
 metadata:
   author: repoforge
   version: "1.0"
-  complexity: medium
-  token_estimate: 350
-  dependencies: []
-  related_skills: []
-  load_priority: high
+complexity: low
+token_estimate: 450
+dependencies: []
+related_skills: [auth, generate]
+load_priority: high
 ---
 
 <!-- L1:START -->
-# Define Request and Response Schemas
+# add-schemas-endpoint
 
-This skill covers the creation of Pydantic v2 request and response schemas.
+Pydantic v2 request/response schemas for RepoForge Web API.
 
-**Trigger**: Load this skill when defining schemas for the RepoForge Web API.
+**Trigger**: when defining or validating schemas in apps/server/app/models/schemas.py
 <!-- L1:END -->
 
 <!-- L2:START -->
@@ -27,57 +27,65 @@ This skill covers the creation of Pydantic v2 request and response schemas.
 
 | Task | Pattern |
 |------|---------|
-| Define user info schema | `UserInfo` |
-| Create token response schema | `TokenResponse` |
-
-## Critical Patterns (Summary)
-- **User Info Schema**: Defines the structure for user information.
-- **Token Response Schema**: Specifies the format for token responses.
+| Validate user input | `UserInfo` |
+| Structure API responses | `UserResponse` |
 <!-- L2:END -->
 
 <!-- L3:START -->
 ## Critical Patterns (Detailed)
 
-### User Info Schema
+### Pattern: UserInfo Validation
 
-Defines the structure for user information using Pydantic.
-
-```python
-from apps.server.app.models.schemas import UserInfo
-
-user_info = UserInfo(username="john_doe", email="john@example.com")
-```
-
-### Token Response Schema
-
-Specifies the format for token responses, ensuring proper validation.
+Validates incoming user data with required fields and type coercion.
 
 ```python
-from apps.server.app.models.schemas import TokenResponse
+// Real code using actual exported names from this module
+from pydantic import BaseModel
 
-token_response = TokenResponse(access_token="abc123", token_type="bearer")
+class UserInfo(BaseModel):
+    username: str
+    email: str
+    is_active: bool = True
 ```
+### Pattern: UserResponse Structure
 
+Structures API response with computed fields and serialization.
+
+```python
+// Real code using actual exported names from this module
+from pydantic import BaseModel, Field
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    email: str
+    is_active: bool
+    created_at: datetime.datetime = Field(default_factory=datetime.datetime.now)
+```
 ## When to Use
 
-- When creating API endpoints that require user information validation.
-- When handling authentication responses in the RepoForge Web API.
+- When defining request models for `/auth/validate` endpoint
+- When structuring user data in API responses
 
 ## Commands
 
 ```bash
-docker-compose up
-python repoforge/cli.py run
-```
+# Run the server with uvicorn
+uvicorn apps.server.main:app --reload
 
+# Apply database migrations
+alembic upgrade head
+```
 ## Anti-Patterns
 
-### Don't: Use Unvalidated Data
+### Don't: Omit required fields
 
-Using unvalidated data can lead to security vulnerabilities and data integrity issues.
+<Why it's wrong.> Omitting required fields like `username` or `email` causes Pydantic validation errors at runtime, breaking API endpoints.
 
 ```python
-# BAD
-user_info = UserInfo(username="john_doe", email="not-an-email")
+// BAD
+class BadUserInfo(BaseModel):
+    # Missing required 'username' field
+    email: str
 ```
 <!-- L3:END -->
